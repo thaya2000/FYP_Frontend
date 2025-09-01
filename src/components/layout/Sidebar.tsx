@@ -35,6 +35,10 @@ export function Sidebar({ className, activeTab, onTabChange }: SidebarProps) {
       baseItems.splice(2, 0, { id: 'create', label: 'Create Product', icon: Package });
     }
 
+    if (user?.role === 'SUPPLIER') {
+      baseItems.splice(2, 0, { id: 'supply', label: 'Supply Materials', icon: Truck });
+    }
+
     if (user?.role === 'TRANSPORTER') {
       baseItems.splice(2, 0, { id: 'shipments', label: 'Shipments', icon: Truck });
     }

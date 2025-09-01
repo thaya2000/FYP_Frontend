@@ -1,4 +1,4 @@
-export type Role = 'MANUFACTURER' | 'TRANSPORTER' | 'WAREHOUSE' | 'WHOLESALER' | 'RETAILER' | 'END_USER';
+export type Role = 'MANUFACTURER' | 'SUPPLIER' | 'WHOLESALER' | 'TRANSPORTER' | 'WAREHOUSE' | 'RETAILER' | 'END_USER';
 
 export interface UserProfile {
   id: string;
