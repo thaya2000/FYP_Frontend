@@ -141,7 +141,7 @@ export default function Login() {
               <span className="text-muted-foreground">Don't have an account? </span>
               <Link 
                 to="/register" 
-                className="text-primary hover:text-primary-hover font-medium"
+                className="text-primary hover:text-primary/80 font-medium transition-colors"
               >
                 Sign up
               </Link>

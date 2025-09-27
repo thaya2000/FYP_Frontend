@@ -221,7 +221,7 @@ export default function Register() {
               <span className="text-muted-foreground">Already have an account? </span>
               <Link 
                 to="/login" 
-                className="text-primary hover:text-primary-hover font-medium"
+                className="text-primary hover:text-primary/80 font-medium transition-colors"
               >
                 Sign in
               </Link>
