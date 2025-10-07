@@ -64,9 +64,9 @@ export function Header() {
             <Settings className="w-4 h-4" />
           </Button>
 
-          <Button size="sm" className="bg-gradient-primary text-white border-0 hover:opacity-90">
-            Connect Wallet
-          </Button>
+          {/* <Button size="sm" className="bg-gradient-primary text-white border-0 hover:opacity-90">
+              Connect Wallet
+            </Button> */}
         </div>
       </div>
     </header>

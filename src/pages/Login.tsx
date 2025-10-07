@@ -13,6 +13,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import metamaskFox from "@/img/metamask_fox.png";
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
@@ -95,7 +96,7 @@ export default function LoginPage() {
         <CardContent>
           <div className="flex flex-col items-center justify-center space-y-6 mt-4">
             <img
-              src="/metamask-fox.svg"
+              src={metamaskFox}
               alt="MetaMask"
               className={`w-24 h-24 mb-2 ${loading ? "animate-bounce" : "animate-pulse"}`}
             />

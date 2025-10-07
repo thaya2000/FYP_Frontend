@@ -4,10 +4,8 @@ import {
   LayoutDashboard,
   Package,
   Truck,
-  AlertTriangle,
   QrCode,
   Settings,
-  Map,
   BarChart3,
   PlusCircle,
   LogOut,
@@ -31,8 +29,8 @@ export function Sidebar({
   collapsed = false,
   setCollapsed,
 }: SidebarProps) {
-  const { user, role, logout } = useAppStore();
-  const userRole = role;
+  const { role, logout } = useAppStore();
+  const userRole = role ?? "GUEST"; // ✅ fallback for null
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -40,14 +38,7 @@ export function Sidebar({
   const getNavigationItems = () => {
     switch (userRole) {
       case "ADMIN":
-        return [
-          { path: "/", label: "Dashboard", icon: LayoutDashboard },
-          { path: "/users", label: "Manage Users", icon: Users },
-          { path: "/products", label: "All Products", icon: Package },
-          { path: "/analytics", label: "Analytics", icon: BarChart3 },
-          { path: "/settings", label: "Settings", icon: Settings },
-          { path: "/register", label: "Register", icon: UserPlus },
-        ];
+        return [{ path: "/users", label: "Manage Users", icon: Users }];
 
       case "MANUFACTURER":
         return [
@@ -79,15 +70,15 @@ export function Sidebar({
         ];
 
       case "USER":
-        // 🔹 User only gets QR Scanner
-        return [{ path: "/qr-scan", label: "QR Scanner", icon: QrCode },
-        { path: "/register", label: "Register", icon: UserPlus },];
+        return [
+          { path: "/qr-scan", label: "QR Scanner", icon: QrCode },
+          { path: "/register", label: "Register", icon: UserPlus },
+        ];
 
       default:
-        // Unknown or not logged-in role
-        return [{ path: "/qr-scan", label: "QR Scanner", icon: QrCode },
-        { path: "/register", label: "Register", icon: UserPlus },
-
+        return [
+          { path: "/qr-scan", label: "QR Scanner", icon: QrCode },
+          { path: "/register", label: "Register", icon: UserPlus },
         ];
     }
   };
@@ -95,21 +86,31 @@ export function Sidebar({
   const navigationItems = getNavigationItems();
 
   const handleLogout = () => {
-    logout();
-    navigate("/login");
+    try {
+      logout();
+      localStorage.removeItem("supply-chain-store");
+      navigate("/login");
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
   };
 
   return (
     <div
       className={cn(
-        "fixed left-0 top-15 h-screen bg-card border-r shadow-md flex flex-col z-50 transition-all duration-300",
+        "fixed left-0 top-15 h-[calc(100vh-3.75rem)] bg-card border-r shadow-md flex flex-col z-50 transition-all duration-300",
         collapsed ? "w-20" : "w-64",
         className
       )}
+
     >
-      {/* Sidebar Header */}
+      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
-        {!collapsed && <h2 className="font-semibold text-lg">Navigation</h2>}
+        {!collapsed && (
+          <h2 className="font-semibold text-lg">
+            {userRole !== "GUEST" ? `${userRole} Panel` : "Navigation"}
+          </h2>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -120,7 +121,7 @@ export function Sidebar({
         </Button>
       </div>
 
-      {/* Sidebar Navigation */}
+      {/* Main Scrollable Section */}
       <div className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
         {navigationItems.map((item) => {
           const Icon = item.icon;
@@ -147,7 +148,7 @@ export function Sidebar({
         })}
       </div>
 
-      {/* Logout Section */}
+      {/* ✅ Logout Section pinned to bottom */}
       <div className="border-t p-3">
         <Button
           onClick={handleLogout}

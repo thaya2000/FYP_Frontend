@@ -23,7 +23,7 @@ import QRScannerPage from "./pages/QRScannerPage";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 
 // 🆕 (Optional placeholders for admin/supplier/warehouse)
-// import ManageUsers from "./pages/ManageUsers"; // For ADMIN
+import ManageUsers from "./pages/ManageUsers"; // For ADMIN
 // import Inventory from "./pages/Inventory"; // For WAREHOUSE
 
 const queryClient = new QueryClient();
@@ -66,11 +66,7 @@ const App = () => {
               {/* 🧩 ADMIN */}
               {userRole === "ADMIN" && (
                 <>
-                  <Route index element={<Index />} />
-                  <Route path="register" element={<Register />} />
-                  <Route path="products" element={<Products />} />
-                  <Route path="analytics" element={<Analytics />} />
-                  <Route path="settings" element={<Settings />} />
+                  <Route path="users" element={<ManageUsers />} />
                 </>
               )}
 
