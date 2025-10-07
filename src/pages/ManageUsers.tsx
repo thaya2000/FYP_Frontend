@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
-import { useAppStore } from "@/lib/store";
+import { registrationService } from "@/services/registrationService";
 import {
     Card,
     CardHeader,
@@ -19,60 +18,33 @@ import {
 } from "@/components/ui/tabs";
 
 export default function ManageUsers() {
-    const { token } = useAppStore();
     const queryClient = useQueryClient();
     const [selected, setSelected] = useState<any | null>(null);
 
-    // 🔹 Fetch pending registrations
-    const {
-        data: pending,
-        isLoading: loadingPending,
-    } = useQuery({
+    // ✅ Queries
+    const { data: pending, isLoading: loadingPending } = useQuery({
         queryKey: ["pending-registrations"],
-        queryFn: async () => {
-            const res = await axios.get("http://localhost:5000/api/registrations/pending", {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            return res.data;
-        },
+        queryFn: registrationService.getPending,
     });
 
-    // 🔹 Fetch approved users
-    const {
-        data: users,
-        isLoading: loadingUsers,
-    } = useQuery({
+    const { data: users, isLoading: loadingUsers } = useQuery({
         queryKey: ["approved-users"],
-        queryFn: async () => {
-            const res = await axios.get("http://localhost:5000/api/registrations/approved", {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            return res.data;
-        },
+        queryFn: registrationService.getApproved,
     });
 
-    // 🔹 Fetch single user details
+    // ✅ View details
     const handleView = async (client_uuid: string) => {
         try {
-            const res = await axios.get(
-                `http://localhost:5000/api/registrations/${client_uuid}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            setSelected(res.data);
+            const data = await registrationService.getByUUID(client_uuid);
+            setSelected(data);
         } catch (err: any) {
             toast.error(err.response?.data?.error || "Failed to load details");
         }
     };
 
-    // 🔹 Approve user
+    // ✅ Approve pending registration
     const approveMutation = useMutation({
-        mutationFn: async (client_uuid: string) => {
-            await axios.patch(
-                `http://localhost:5000/api/registrations/${client_uuid}/approve`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-        },
+        mutationFn: (client_uuid: string) => registrationService.approve(client_uuid),
         onSuccess: () => {
             toast.success("✅ User approved!");
             queryClient.invalidateQueries({ queryKey: ["pending-registrations"] });
@@ -94,7 +66,7 @@ export default function ManageUsers() {
                     <TabsTrigger value="pending">Pending</TabsTrigger>
                 </TabsList>
 
-                {/* ✅ Approved Users Tab */}
+                {/* ✅ Approved Users */}
                 <TabsContent value="users">
                     {loadingUsers ? (
                         <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -113,11 +85,7 @@ export default function ManageUsers() {
                                         <p><b>Client UUID:</b> {user.client_uuid}</p>
                                         <p><b>Tx Hash:</b> {user.tx_hash?.slice(0, 12)}...</p>
                                         <p><b>Created:</b> {new Date(user.created_at).toLocaleString()}</p>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleView(user.client_uuid)}
-                                        >
+                                        <Button size="sm" variant="outline" onClick={() => handleView(user.client_uuid)}>
                                             View
                                         </Button>
                                     </CardContent>
@@ -127,7 +95,7 @@ export default function ManageUsers() {
                     )}
                 </TabsContent>
 
-                {/* 🕓 Pending Tab */}
+                {/* 🕓 Pending Users */}
                 <TabsContent value="pending">
                     {loadingPending ? (
                         <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -203,38 +171,6 @@ export default function ManageUsers() {
                             <p><b>Email:</b> {selected.payload?.contact?.email}</p>
                             <p><b>Phone:</b> {selected.payload?.contact?.phone}</p>
                             <p><b>Address:</b> {selected.payload?.contact?.address}</p>
-
-                            {selected.payload?.details && (
-                                <>
-                                    {selected.payload.details.productCategoriesManufactured && (
-                                        <p>
-                                            <b>Products:</b>{" "}
-                                            {selected.payload.details.productCategoriesManufactured.join(", ")}
-                                        </p>
-                                    )}
-                                    {selected.payload.details.certifications && (
-                                        <p>
-                                            <b>Certifications:</b>{" "}
-                                            {selected.payload.details.certifications.join(", ")}
-                                        </p>
-                                    )}
-                                </>
-                            )}
-
-                            {selected.status === "PENDING" && (
-                                <div className="flex justify-end pt-4">
-                                    <Button
-                                        onClick={() => approveMutation.mutate(selected.client_uuid)}
-                                        disabled={approveMutation.isPending}
-                                    >
-                                        {approveMutation.isPending ? (
-                                            <Loader2 className="animate-spin w-4 h-4 mr-1" />
-                                        ) : (
-                                            "Approve"
-                                        )}
-                                    </Button>
-                                </div>
-                            )}
                         </CardContent>
                     </Card>
                 </div>
