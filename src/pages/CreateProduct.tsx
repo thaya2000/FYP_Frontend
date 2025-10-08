@@ -35,6 +35,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import { useAppStore } from "@/lib/store";
 
 // 🔹 Utility — Simple ISO Date Validator
 const isValidISODate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date);
@@ -43,11 +44,13 @@ export default function CreateProduct() {
   const queryClient = useQueryClient();
   const [selectedBatch, setSelectedBatch] = useState<string>("");
 
+  const { uuid } = useAppStore();
   const [batchForm, setBatchForm] = useState({
     productCategory: "vaccine",
-    manufacturerUUID: "MF-017",
+    manufacturerUUID: uuid,
     facility: "",
-    productionWindow: "",
+    productionStart: "",
+    productionEnd: "",
     quantityProduced: "",
     releaseStatus: "",
   });
@@ -92,9 +95,10 @@ export default function CreateProduct() {
       queryClient.invalidateQueries({ queryKey: ["batches"] });
       setBatchForm({
         productCategory: "vaccine",
-        manufacturerUUID: "MF-017",
+        manufacturerUUID: uuid,
         facility: "",
-        productionWindow: "",
+        productionStart: "",
+        productionEnd: "",
         quantityProduced: "",
         releaseStatus: "",
       });
@@ -142,15 +146,20 @@ export default function CreateProduct() {
   // 🔹 Validations
   // ============================
   const validateBatchForm = () => {
-    const { facility, productionWindow, quantityProduced, releaseStatus } = batchForm;
+    const { facility, productionStart, productionEnd, quantityProduced, releaseStatus } = batchForm;
 
     if (!facility.trim()) return "Facility name is required.";
-    if (!productionWindow.trim() || !/^\d{4}-\d{2}-\d{2}\sto\s\d{4}-\d{2}-\d{2}$/.test(productionWindow))
-      return "Production window must be in format 'YYYY-MM-DD to YYYY-MM-DD'.";
+    if (!productionStart || !isValidISODate(productionStart)) return "Production start date is required (YYYY-MM-DD).";
+    if (!productionEnd || !isValidISODate(productionEnd)) return "Production end date is required (YYYY-MM-DD).";
+
+    const start = new Date(productionStart);
+    const end = new Date(productionEnd);
+    if (start > end) return "Production start date must be before or equal to end date.";
+
     if (!quantityProduced.trim() || isNaN(Number(quantityProduced)))
       return "Quantity produced must be a valid number.";
     if (!releaseStatus.trim() || !isValidISODate(releaseStatus))
-      return "Release status must be a valid date (YYYY-MM-DD).";
+      return "Release date must be a valid date (YYYY-MM-DD).";
 
     return null;
   };
@@ -184,11 +193,13 @@ export default function CreateProduct() {
     const error = validateBatchForm();
     if (error) return toast.error(error);
 
+    const productionWindow = `${batchForm.productionStart} to ${batchForm.productionEnd}`;
+
     createBatchMutation.mutate({
       productCategory: batchForm.productCategory.trim(),
       manufacturerUUID: batchForm.manufacturerUUID.trim(),
       facility: batchForm.facility.trim(),
-      productionWindow: batchForm.productionWindow.trim(),
+      productionWindow, // send as "YYYY-MM-DD to YYYY-MM-DD"
       quantityProduced: batchForm.quantityProduced.trim(),
       releaseStatus: batchForm.releaseStatus.trim(),
     });
@@ -265,12 +276,14 @@ export default function CreateProduct() {
                     {/* 🧩 Left Column */}
                     <div className="space-y-3">
                       <div>
-                        <label className="font-medium text-sm mb-1 block">Select Batch</label>
+                        <label htmlFor="select-batch" className="font-medium text-sm mb-1 block">
+                          Select Batch
+                        </label>
                         <Select
                           value={selectedBatch}
                           onValueChange={(v) => setSelectedBatch(v)}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger id="select-batch" aria-label="Select Batch">
                             <SelectValue placeholder="Choose batch" />
                           </SelectTrigger>
                           <SelectContent>
@@ -283,77 +296,152 @@ export default function CreateProduct() {
                         </Select>
                       </div>
 
-                      <Input
-                        name="productName"
-                        placeholder="Pfizer Vaccine"
-                        value={productForm.productName}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="requiredStorageTemp"
-                        placeholder="2–8°C"
-                        value={productForm.requiredStorageTemp}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="expiryDate"
-                        type="date"
-                        value={productForm.expiryDate}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="sensorDeviceUUID"
-                        placeholder="SENSOR-1001"
-                        value={productForm.sensorDeviceUUID}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="microprocessorMac"
-                        placeholder="00:1A:2B:3C:4D:5E"
-                        value={productForm.microprocessorMac}
-                        onChange={handleProductChange}
-                      />
+                      <div>
+                        <label htmlFor="productName" className="font-medium text-sm mb-1 block">
+                          Product Name
+                        </label>
+                        <Input
+                          id="productName"
+                          name="productName"
+                          placeholder="Pfizer Vaccine"
+                          value={productForm.productName}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="requiredStorageTemp" className="font-medium text-sm mb-1 block">
+                          Required Storage Temperature
+                        </label>
+                        <Input
+                          id="requiredStorageTemp"
+                          name="requiredStorageTemp"
+                          placeholder="2–8°C"
+                          value={productForm.requiredStorageTemp}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="expiryDate" className="font-medium text-sm mb-1 block">
+                          Expiry Date
+                        </label>
+                        <Input
+                          id="expiryDate"
+                          name="expiryDate"
+                          type="date"
+                          value={productForm.expiryDate}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="sensorDeviceUUID" className="font-medium text-sm mb-1 block">
+                          Sensor Device UUID
+                        </label>
+                        <Input
+                          id="sensorDeviceUUID"
+                          name="sensorDeviceUUID"
+                          placeholder="SENSOR-1001"
+                          value={productForm.sensorDeviceUUID}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="microprocessorMac" className="font-medium text-sm mb-1 block">
+                          Microprocessor MAC Address
+                        </label>
+                        <Input
+                          id="microprocessorMac"
+                          name="microprocessorMac"
+                          placeholder="00:1A:2B:3C:4D:5E"
+                          value={productForm.microprocessorMac}
+                          onChange={handleProductChange}
+                        />
+                      </div>
                     </div>
 
                     {/* 🧩 Right Column */}
                     <div className="space-y-3">
-                      <Textarea
-                        name="handlingInstructions"
-                        placeholder="Handle with care. Do not freeze."
-                        value={productForm.handlingInstructions}
-                        onChange={handleProductChange}
-                        className="h-[100px]"
-                      />
-                      <Input
-                        name="sensorTypes"
-                        placeholder="GPS, Temperature"
-                        value={productForm.sensorTypes}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="qrId"
-                        placeholder="QR-12345"
-                        value={productForm.qrId}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="wifiSSID"
-                        placeholder="PfizerNet"
-                        value={productForm.wifiSSID}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="wifiPassword"
-                        placeholder="securepass123"
-                        value={productForm.wifiPassword}
-                        onChange={handleProductChange}
-                      />
-                      <Input
-                        name="originFacilityAddr"
-                        placeholder="Pfizer Lab NY - Line 1"
-                        value={productForm.originFacilityAddr}
-                        onChange={handleProductChange}
-                      />
+                      <div>
+                        <label htmlFor="handlingInstructions" className="font-medium text-sm mb-1 block">
+                          Handling Instructions
+                        </label>
+                        <Textarea
+                          id="handlingInstructions"
+                          name="handlingInstructions"
+                          placeholder="Handle with care. Do not freeze."
+                          value={productForm.handlingInstructions}
+                          onChange={handleProductChange}
+                          className="h-[100px]"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="sensorTypes" className="font-medium text-sm mb-1 block">
+                          Sensor Types
+                        </label>
+                        <Input
+                          id="sensorTypes"
+                          name="sensorTypes"
+                          placeholder="GPS, Temperature"
+                          value={productForm.sensorTypes}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="qrId" className="font-medium text-sm mb-1 block">
+                          QR ID
+                        </label>
+                        <Input
+                          id="qrId"
+                          name="qrId"
+                          placeholder="QR-12345"
+                          value={productForm.qrId}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="wifiSSID" className="font-medium text-sm mb-1 block">
+                          Wi-Fi SSID
+                        </label>
+                        <Input
+                          id="wifiSSID"
+                          name="wifiSSID"
+                          placeholder="PfizerNet"
+                          value={productForm.wifiSSID}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="wifiPassword" className="font-medium text-sm mb-1 block">
+                          Wi-Fi Password
+                        </label>
+                        <Input
+                          id="wifiPassword"
+                          name="wifiPassword"
+                          placeholder="securepass123"
+                          value={productForm.wifiPassword}
+                          onChange={handleProductChange}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="originFacilityAddr" className="font-medium text-sm mb-1 block">
+                          Origin Facility Address
+                        </label>
+                        <Input
+                          id="originFacilityAddr"
+                          name="originFacilityAddr"
+                          placeholder="Pfizer Lab NY - Line 1"
+                          value={productForm.originFacilityAddr}
+                          onChange={handleProductChange}
+                        />
+                      </div>
                     </div>
 
                     {/* 🧭 Full-width submit button */}
@@ -375,8 +463,8 @@ export default function CreateProduct() {
                   </form>
                 </DialogContent>
               </Dialog>
-
             </CardHeader>
+
             <CardContent>
               {loadingProducts ? (
                 <div className="flex justify-center items-center py-10">
@@ -387,13 +475,14 @@ export default function CreateProduct() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
-                    <thead> <tr className="bg-muted">
-                      <th className="p-2 border text-left">Product UUID</th>
-                      <th className="p-2 border text-left">Name</th>
-                      <th className="p-2 border text-left">Batch</th>
-                      <th className="p-2 border text-left">Expiry Date</th>
-                      <th className="p-2 border text-left">Status</th>
-                    </tr>
+                    <thead>
+                      <tr className="bg-muted">
+                        <th className="p-2 border text-left">Product UUID</th>
+                        <th className="p-2 border text-left">Name</th>
+                        <th className="p-2 border text-left">Batch</th>
+                        <th className="p-2 border text-left">Expiry Date</th>
+                        <th className="p-2 border text-left">Status</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {products?.map((p: any) => (
@@ -403,10 +492,12 @@ export default function CreateProduct() {
                           <td className="p-2 border">{p.batchLotId}</td>
                           <td className="p-2 border">{p.expiryDate}</td>
                           <td className="p-2 border">{p.status}</td>
-                        </tr>))}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
-                </div>)}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -430,16 +521,81 @@ export default function CreateProduct() {
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>Create New Batch</DialogTitle>
-                    <DialogDescription>Fill in details to create a new batch.</DialogDescription>
+                    <DialogDescription>
+                      Fill in details to create a new batch.
+                    </DialogDescription>
                   </DialogHeader>
 
                   <form onSubmit={handleCreateBatch} className="space-y-3 mt-4">
-                    <Input name="facility" placeholder="Pfizer Lab NY - Line 1" value={batchForm.facility} onChange={handleBatchChange} />
-                    <Input name="productionWindow" placeholder="2025-09-20 to 2025-09-23" value={batchForm.productionWindow} onChange={handleBatchChange} />
-                    <Input name="quantityProduced" placeholder="10020" value={batchForm.quantityProduced} onChange={handleBatchChange} />
-                    <Input name="releaseStatus" type="date" value={batchForm.releaseStatus} onChange={handleBatchChange} />
+                    <div>
+                      <label htmlFor="facility" className="font-medium text-sm mb-1 block">
+                        Facility Name
+                      </label>
+                      <Input
+                        id="facility"
+                        name="facility"
+                        placeholder="Pfizer Lab NY - Line 1"
+                        value={batchForm.facility}
+                        onChange={handleBatchChange}
+                      />
+                    </div>
 
-                    <Button type="submit" disabled={createBatchMutation.isPending} className="w-full">
+                    {/* Production Window: start + end date pickers */}
+                    <div>
+                      <label className="font-medium text-sm mb-1 block">Production Window</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Input
+                          id="productionStart"
+                          name="productionStart"
+                          type="date"
+                          value={batchForm.productionStart}
+                          onChange={handleBatchChange}
+                          aria-label="Production start date"
+                          placeholder="YYYY-MM-DD"
+                        />
+                        <Input
+                          id="productionEnd"
+                          name="productionEnd"
+                          type="date"
+                          value={batchForm.productionEnd}
+                          onChange={handleBatchChange}
+                          aria-label="Production end date"
+                          placeholder="YYYY-MM-DD"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="quantityProduced" className="font-medium text-sm mb-1 block">
+                        Quantity Produced
+                      </label>
+                      <Input
+                        id="quantityProduced"
+                        name="quantityProduced"
+                        placeholder="10020"
+                        value={batchForm.quantityProduced}
+                        onChange={handleBatchChange}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="releaseStatus" className="font-medium text-sm mb-1 block">
+                        Release Date
+                      </label>
+                      <Input
+                        id="releaseStatus"
+                        name="releaseStatus"
+                        type="date"
+                        value={batchForm.releaseStatus}
+                        onChange={handleBatchChange}
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      disabled={createBatchMutation.isPending}
+                      className="w-full"
+                    >
                       {createBatchMutation.isPending ? (
                         <>
                           <Loader2 className="animate-spin w-4 h-4 mr-2" /> Creating...
@@ -452,40 +608,41 @@ export default function CreateProduct() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
+
             <CardContent>
               {loadingBatches ? (
                 <div className="flex justify-center items-center py-10">
                   <Loader2 className="animate-spin w-6 h-6" />
                 </div>
-              ) :
-                batches?.length === 0 ? (
-                  <p className="text-muted-foreground">No batches found.</p>
-                ) :
-                  (
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-sm">
-                        <thead>
-                          <tr className="bg-muted">
-                            <th className="p-2 border text-left">ID</th>
-                            <th className="p-2 border text-left">Facility</th>
-                            <th className="p-2 border text-left">Quantity</th>
-                            <th className="p-2 border text-left">Production Window</th>
-                            <th className="p-2 border text-left">Release Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {batches?.map((b: any) => (
-                            <tr key={b.id} className="hover:bg-muted/30">
-                              <td className="p-2 border">{b.id}</td>
-                              <td className="p-2 border">{b.facility}</td>
-                              <td className="p-2 border">{b.quantityProduced}</td>
-                              <td className="p-2 border">{b.productionWindow}</td>
-                              <td className="p-2 border">{b.releaseStatus}</td>
-                            </tr>))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )} </CardContent>
+              ) : batches?.length === 0 ? (
+                <p className="text-muted-foreground">No batches found.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-muted">
+                        <th className="p-2 border text-left">ID</th>
+                        <th className="p-2 border text-left">Facility</th>
+                        <th className="p-2 border text-left">Quantity</th>
+                        <th className="p-2 border text-left">Production Window</th>
+                        <th className="p-2 border text-left">Release Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batches?.map((b: any) => (
+                        <tr key={b.id} className="hover:bg-muted/30">
+                          <td className="p-2 border">{b.id}</td>
+                          <td className="p-2 border">{b.facility}</td>
+                          <td className="p-2 border">{b.quantityProduced}</td>
+                          <td className="p-2 border">{b.productionWindow}</td>
+                          <td className="p-2 border">{b.releaseStatus}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

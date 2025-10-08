@@ -68,6 +68,7 @@ export default function LoginPage() {
         token: res.data.token,
         role: res.data.role,
         address: res.data.address,
+        uuid: res.data.uuid,
       });
 
       setStatus("✅ Login successful! Redirecting...");

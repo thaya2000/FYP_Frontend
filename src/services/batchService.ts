@@ -2,12 +2,12 @@ import { api } from "./api";
 
 export const batchService = {
     async getAllBatches() {
-        const res = await api.get("/batches");
+        const res = await api.get("/api/batches");
         return res.data;
     },
 
     async getBatchById(id: number) {
-        const res = await api.get(`/batches/${id}`);
+        const res = await api.get(`/api/batches/${id}`);
         return res.data;
     },
 
@@ -19,7 +19,7 @@ export const batchService = {
         quantityProduced: string;
         releaseStatus: string;
     }) {
-        const res = await api.post("/batches", data);
+        const res = await api.post("/api/batches", data);
         return res.data;
     },
 };

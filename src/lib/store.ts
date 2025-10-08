@@ -13,6 +13,7 @@ interface AppState {
   // 🔐 Auth & Wallet
   token?: string;
   role?: string;
+  uuid?: string; // <-- optional UUID saved only if provided
   walletAddress: `0x${string}` | null;
   isConnected: boolean;
 
@@ -42,7 +43,12 @@ interface AppState {
   setUser: (user: UserProfile | null) => void;
 
   // 🔐 Auth actions
-  setAuth: (data: { token: string; role: string; address: `0x${string}` }) => void;
+  setAuth: (data: {
+    token: string;
+    role: string;
+    address: `0x${string}`;
+    uuid?: string; // <-- optional in payload
+  }) => void;
   logout: () => void;
   setWalletConnection: (address: `0x${string}` | null) => void;
 
@@ -75,6 +81,7 @@ export const useAppStore = create<AppState>()(
       user: null,
       token: undefined,
       role: undefined,
+      uuid: undefined, // <-- start undefined
       isConnected: false,
       walletAddress: null,
       products: [],
@@ -91,7 +98,7 @@ export const useAppStore = create<AppState>()(
       setUser: (user) => set({ user }),
 
       // 🔐 Auth actions
-      setAuth: ({ token, role, address }) => {
+      setAuth: ({ token, role, address, uuid }) => {
         // Reset any mock or stale data when authenticating
         set({
           token,
@@ -99,6 +106,7 @@ export const useAppStore = create<AppState>()(
           walletAddress: address,
           isConnected: true,
           user: null, // ✅ Clear any previous mock user
+          ...(uuid ? { uuid } : {}), // ✅ save UUID only if present
         });
         setAuthToken(token); // ✅ apply JWT to Axios instance
       },
@@ -107,6 +115,7 @@ export const useAppStore = create<AppState>()(
         set({
           token: undefined,
           role: undefined,
+          uuid: undefined, // ✅ clear UUID on logout
           walletAddress: null,
           isConnected: false,
           user: null,
@@ -187,6 +196,7 @@ export const useAppStore = create<AppState>()(
         // ✅ Only persist what is safe and useful
         token: state.token,
         role: state.role,
+        uuid: state.uuid, // ✅ persist UUID if present
         walletAddress: state.walletAddress,
         temperatureUnit: state.temperatureUnit,
         darkMode: state.darkMode,
