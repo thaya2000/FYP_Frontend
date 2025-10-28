@@ -57,7 +57,7 @@ export function Sidebar({
         return [
           { path: "/", label: "Dashboard", icon: LayoutDashboard },
           { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
-          { path: "/handover", label: "Incoming Shipments", icon: Truck },
+          { path: "/handover", label: "Shipments", icon: Truck },
           { path: "/settings", label: "Settings", icon: Settings },
           { path: "/register", label: "Register", icon: UserPlus },
         ];

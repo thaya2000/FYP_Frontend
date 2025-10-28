@@ -1,1112 +1,762 @@
-﻿import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { batchService, type BatchPayload } from "@/services/batchService";
-import { productRegistryService } from "@/services/productService";
-import type { UpdateProductRequest } from "@/services/productService";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { toast } from "sonner";
-import { Loader2, Pencil, Plus } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAppStore } from "@/lib/store";
-import type { VaccineProductStatus } from "@/types";
+import { productCategoryService } from "@/services/productCategoryService";
+import { productRegistryService, type CreateProductRequest, type UpdateProductRequest } from "@/services/productService";
+import { batchService, type CreateBatchRequest } from "@/services/batchService";
+import type { Product, ProductCategory } from "@/types";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Pencil } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-// ðŸ”¹ Utility â€” Simple ISO Date Validator
-const isValidISODate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date);
+type ProductFormState = CreateProductRequest;
+
+const emptyProductForm: ProductFormState = {
+  productName: "",
+  productCategoryId: "",
+  requiredStartTemp: "",
+  requiredEndTemp: "",
+  handlingInstructions: "",
+};
+
+type BatchFormState = {
+  productId: string;
+  facility: string;
+  productionStartTime: string;
+  productionEndTime: string;
+  quantityProduced: string;
+  expiryDate: string;
+};
+
+const emptyBatchForm: BatchFormState = {
+  productId: "",
+  facility: "",
+  productionStartTime: "",
+  productionEndTime: "",
+  quantityProduced: "",
+  expiryDate: "",
+};
+
+const normalizeDateTimeToIso = (value: string) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  if (trimmed.endsWith("Z")) return trimmed;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    return `${trimmed}:00Z`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return `${trimmed}Z`;
+  }
+  const maybeDate = new Date(trimmed);
+  if (!Number.isNaN(maybeDate.getTime())) {
+    return maybeDate.toISOString();
+  }
+  return trimmed;
+};
 
 export default function CreateProduct() {
+  const { role, uuid } = useAppStore();
   const queryClient = useQueryClient();
-  const [selectedBatch, setSelectedBatch] = useState<string>("");
-  const [isBatchDialogOpen, setIsBatchDialogOpen] = useState(false);
+  const { toast } = useToast();
+
+  const [activeTab, setActiveTab] = useState(() => (role === "ADMIN" ? "categories" : "products"));
+  const [categoryName, setCategoryName] = useState("");
+  const [productForm, setProductForm] = useState<ProductFormState>(emptyProductForm);
+  const [batchForm, setBatchForm] = useState<BatchFormState>(emptyBatchForm);
+  const [productListCategory, setProductListCategory] = useState("");
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
-  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
-  const [editingProductId, setEditingProductId] = useState<string | null>(null);
 
-  const { uuid } = useAppStore();
-  const statusOptions: VaccineProductStatus[] = [
-    "PRODUCT_CREATED",
-    "PRODUCT_READY_FOR_SHIPMENT",
-    "PRODUCT_ALLOCATED",
-    "PRODUCT_IN_TRANSIT",
-    "PRODUCT_DELIVERED",
-    "PRODUCT_RETURNED",
-    "PRODUCT_CANCELLED",
-  ];
+  const categoriesEnabled = role === "ADMIN" || role === "MANUFACTURER";
 
-  const createEmptyBatchForm = (manufacturerId: string | undefined) => ({
-    productCategory: "",
-    manufacturerUUID: manufacturerId ?? "",
-    facility: "",
-    productionStart: "",
-    productionEnd: "",
-    quantityProduced: "",
-    releaseStatus: "",
-    expiryDate: "",
-    handlingInstructions: "",
-    requiredStartTemp: "",
-    requiredEndTemp: "",
+  const { data: categories = [], isLoading: loadingCategories } = useQuery<ProductCategory[]>({
+    queryKey: ["productCategories"],
+    queryFn: () => productCategoryService.list(),
   });
 
-  const createEmptyProductForm = (manufacturerId: string | undefined) => ({
-    manufacturerUUID: manufacturerId ?? "",
-    productCategory: "IoT",
-    productName: "",
-    quantity: "",
-    microprocessorMac: "",
-    sensorTypes: "",
-    wifiSSID: "",
-    wifiPassword: "",
-    status: "PRODUCT_READY_FOR_SHIPMENT",
-    requiredStorageTemp: "",
-    handlingInstructions: "",
-    expiryDate: "",
-    originFacilityAddr: "",
-    transportRoutePlanId: "",
-    qrId: "",
-    sensorDeviceUUID: "",
+  const { data: products = [], isLoading: loadingProducts } = useQuery<Product[]>({
+    queryKey: ["products", productListCategory],
+    queryFn: () =>
+      productRegistryService.getAllProducts(
+        productListCategory ? { categoryId: productListCategory } : undefined,
+      ),
   });
 
-  const [batchForm, setBatchForm] = useState(() => createEmptyBatchForm(uuid));
-  const [productForm, setProductForm] = useState(() =>
-    createEmptyProductForm(uuid)
+  const { data: allProducts = [], isLoading: loadingAllProducts } = useQuery<Product[]>({
+    queryKey: ["products", "all"],
+    queryFn: () => productRegistryService.getAllProducts(),
+  });
+
+  const handleProductListCategoryChange = (value: string) => {
+    setProductListCategory(value === "ALL" ? "" : value);
+  };
+
+  const productListSelectValue = productListCategory || "ALL";
+
+  const categoryLookup = useMemo<Record<string, string>>(
+    () =>
+      categories.reduce((acc, category) => {
+        acc[category.id] = category.name;
+        return acc;
+      }, {} as Record<string, string>),
+    [categories],
   );
 
-  useEffect(() => {
-    if (!editingBatchId) {
-      setBatchForm((prev) => ({
-        ...prev,
-        manufacturerUUID: uuid ?? "",
-      }));
-    }
-  }, [uuid, editingBatchId]);
-
-  const isEditingBatch = Boolean(editingBatchId);
-  const isEditingProduct = Boolean(editingProductId);
-
-  useEffect(() => {
-    if (!editingProductId) {
-      setProductForm((prev) => ({
-        ...prev,
-        manufacturerUUID: uuid ?? "",
-      }));
-    }
-  }, [uuid, editingProductId]);
-
-
-  // ============================
-  // ðŸ”¹ Fetch Data
-  // ============================
-  const { data: batches, isLoading: loadingBatches } = useQuery({
-    queryKey: ["batches"],
-    queryFn: () => batchService.getAllBatches(uuid),
-  });
-
-  const { data: products, isLoading: loadingProducts } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => {
-      return productRegistryService.getAllProducts(uuid);
-    },
-  });
-
-  // ============================
-  // ðŸ”¹ Mutations
-  // ============================
-  const createBatchMutation = useMutation({
-    mutationFn: (payload: BatchPayload) => batchService.createBatch(payload),
+  const createCategory = useMutation({
+    mutationFn: () => productCategoryService.create({ name: categoryName.trim() }),
     onSuccess: () => {
-      toast.success("Batch created successfully!");
-      queryClient.invalidateQueries({ queryKey: ["batches"] });
-      setBatchForm(createEmptyBatchForm(uuid));
-      setEditingBatchId(null);
-      setIsBatchDialogOpen(false);
+      toast({ title: "Category created" });
+      setCategoryName("");
+      queryClient.invalidateQueries({ queryKey: ["productCategories"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to create batch");
-    },
-  });
-
-  const updateBatchMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: BatchPayload }) =>
-      batchService.updateBatch(id, data),
-    onSuccess: () => {
-      toast.success("Batch updated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["batches"] });
-      setBatchForm(createEmptyBatchForm(uuid));
-      setEditingBatchId(null);
-      setIsBatchDialogOpen(false);
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to update batch");
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create category",
+        description: error?.response?.data?.error ?? "Try again later.",
+        variant: "destructive",
+      });
     },
   });
 
-  const isSubmittingBatch =
-    createBatchMutation.isPending || updateBatchMutation.isPending;
-
-  const createProductMutation = useMutation({
-    mutationFn: productRegistryService.registerProduct,
+  const createProduct = useMutation({
+    mutationFn: (payload: CreateProductRequest) => productRegistryService.registerProduct(payload),
     onSuccess: () => {
-      toast.success("Product created successfully!");
+      toast({ title: "Product created" });
+      setProductForm(emptyProductForm);
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      setProductForm(createEmptyProductForm(uuid));
-      setSelectedBatch("");
-      setEditingProductId(null);
-      setIsProductDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["productCategories"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to create product");
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create product",
+        description: error?.response?.data?.error ?? "Try again later.",
+        variant: "destructive",
+      });
     },
   });
 
-  const updateProductMutation = useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: UpdateProductRequest;
-    }) => productRegistryService.updateProduct(id, data),
+  const registerBatch = useMutation({
+    mutationFn: (payload: CreateBatchRequest) => batchService.createBatch(payload),
     onSuccess: () => {
-      toast.success("Product updated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      setProductForm(createEmptyProductForm(uuid));
-      setSelectedBatch("");
-      setEditingProductId(null);
-      setIsProductDialogOpen(false);
+      toast({ title: "Batch registered" });
+      resetBatchForm(true);
+      queryClient.invalidateQueries({ queryKey: ["productBatches"] });
+      queryClient.invalidateQueries({ queryKey: ["batches"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || "Failed to update product");
+    onError: (error: any) => {
+      toast({
+        title: "Failed to register batch",
+        description: error?.response?.data?.error ?? "Try again later.",
+        variant: "destructive",
+      });
     },
   });
 
-  const isSubmittingProduct =
-    createProductMutation.isPending || updateProductMutation.isPending;
+  const updateProduct = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateProductRequest }) => productRegistryService.updateProduct(id, data),
+    onSuccess: () => {
+      toast({ title: "Product updated" });
+      setIsProductDialogOpen(false);
+      setEditingProduct(null);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update product",
+        description: error?.response?.data?.error ?? "Try again later.",
+        variant: "destructive",
+      });
+    },
+  });
 
-  // ============================
-  // ðŸ”¹ Input Handlers
-  // ============================
-  const handleBatchChange = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setBatchForm({ ...batchForm, [e.target.name]: e.target.value });
+  const selectedCategoryName = useMemo(() => {
+    return categories.find((c) => c.id === productForm.productCategoryId)?.name ?? "";
+  }, [categories, productForm.productCategoryId]);
 
-  const formatDatePart = (value: string | null | undefined) => {
-    if (!value) return "";
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    return trimmed.includes("T") ? trimmed.split("T")[0] : trimmed;
-  };
+  const handleProductSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmedName = productForm.productName.trim();
+    if (!trimmedName) {
+      toast({ title: "Product name is required", variant: "destructive" });
+      return;
+    }
+    if (!productForm.productCategoryId) {
+      toast({ title: "Select a product category", variant: "destructive" });
+      return;
+    }
+    if (!productForm.requiredStartTemp.trim() || !productForm.requiredEndTemp.trim()) {
+      toast({ title: "Provide the required temperature range", variant: "destructive" });
+      return;
+    }
+    if (!productForm.handlingInstructions.trim()) {
+      toast({ title: "Handling instructions are required", variant: "destructive" });
+      return;
+    }
 
-  const safeString = (value: unknown) =>
-    value === null || value === undefined ? "" : String(value);
-
-  const handleOpenNewBatch = () => {
-    setEditingBatchId(null);
-    setBatchForm(createEmptyBatchForm(uuid));
-    setIsBatchDialogOpen(true);
-  };
-
-  const handleOpenNewProduct = () => {
-    setEditingProductId(null);
-    setProductForm(createEmptyProductForm(uuid));
-    setSelectedBatch("");
-    setIsProductDialogOpen(true);
-  };
-
-  const handleEditBatch = (batch: any) => {
-    if (!batch) return;
-
-    const productionWindowValue =
-      typeof batch.productionWindow === "string" ? batch.productionWindow : "";
-    const [windowStartRaw, windowEndRaw] = productionWindowValue.split("/");
-    const productionStart =
-      formatDatePart(windowStartRaw) ||
-      formatDatePart(batch.productionStart) ||
-      "";
-    const productionEnd =
-      formatDatePart(windowEndRaw) ||
-      formatDatePart(batch.productionEnd) ||
-      "";
-
-    const manufacturerId =
-      batch.manufacturerUUID ??
-      batchForm.manufacturerUUID ??
-      uuid ??
-      "";
-
-    setEditingBatchId(String(batch.id));
-    setBatchForm({
-      productCategory: safeString(batch.productCategory),
-      manufacturerUUID: safeString(manufacturerId),
-      facility: safeString(batch.facility),
-      productionStart,
-      productionEnd,
-      quantityProduced: safeString(batch.quantityProduced),
-      releaseStatus: safeString(batch.releaseStatus),
-      expiryDate:
-        formatDatePart(batch.expiryDate) || safeString(batch.expiryDate),
-      handlingInstructions: safeString(batch.handlingInstructions),
-      requiredStartTemp: safeString(batch.requiredStartTemp),
-      requiredEndTemp: safeString(batch.requiredEndTemp),
+    createProduct.mutate({
+      productName: trimmedName,
+      productCategoryId: productForm.productCategoryId,
+      requiredStartTemp: productForm.requiredStartTemp.trim(),
+      requiredEndTemp: productForm.requiredEndTemp.trim(),
+      handlingInstructions: productForm.handlingInstructions.trim(),
     });
-    setIsBatchDialogOpen(true);
   };
 
-  const handleEditProduct = (product: any) => {
-    if (!product) return;
-
-    const batchId =
-      product.batchId ?? product.batchUUID ?? product.batch_id ?? "";
-
-    const rawStatus = safeString(product.status) as VaccineProductStatus;
-    const normalizedStatus = statusOptions.includes(rawStatus)
-      ? rawStatus
-      : "PRODUCT_CREATED";
-
-    setEditingProductId(String(product.id ?? product.productUUID ?? batchId));
-    setSelectedBatch(batchId ? String(batchId) : "");
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product);
     setProductForm({
-      manufacturerUUID:
-        safeString(product.manufacturerUUID) || (uuid ?? ""),
-      productCategory: safeString(product.productCategory) || "IoT",
-      productName: safeString(product.productName),
-      quantity: safeString(product.quantity),
-      microprocessorMac: safeString(product.microprocessorMac),
-      sensorTypes: safeString(product.sensorTypes),
-      wifiSSID: safeString(product.wifiSSID),
-      wifiPassword: safeString(product.wifiPassword),
-      status: normalizedStatus,
-      requiredStorageTemp: safeString(product.requiredStorageTemp),
-      handlingInstructions: safeString(product.handlingInstructions),
-      expiryDate: formatDatePart(product.expiryDate),
-      originFacilityAddr: safeString(product.originFacilityAddr),
-      transportRoutePlanId: safeString(product.transportRoutePlanId),
-      qrId: safeString(product.qrId),
-      sensorDeviceUUID: safeString(product.sensorDeviceUUID),
+      productName: product.productName,
+      productCategoryId: product.productCategoryId,
+      requiredStartTemp: product.requiredStartTemp ?? "",
+      requiredEndTemp: product.requiredEndTemp ?? "",
+      handlingInstructions: product.handlingInstructions ?? "",
     });
     setIsProductDialogOpen(true);
   };
 
-  const handleProductChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => setProductForm({ ...productForm, [e.target.name]: e.target.value });
+  const handleUpdateProduct = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingProduct) return;
 
-  // ============================
-  // ðŸ”¹ Validations
-  // ============================
-  const validateBatchForm = () => {
-    const {
-      productCategory,
+    updateProduct.mutate({
+      id: editingProduct.id,
+      data: {
+        productName: productForm.productName.trim(),
+        productCategoryId: productForm.productCategoryId,
+        requiredStartTemp: productForm.requiredStartTemp.trim(),
+        requiredEndTemp: productForm.requiredEndTemp.trim(),
+        handlingInstructions: productForm.handlingInstructions.trim(),
+      },
+    });
+  };
+
+  const resetProductForm = () => setProductForm(emptyProductForm);
+
+  const resetBatchForm = (preserveProduct = false) => {
+    if (preserveProduct) {
+      setBatchForm((current) => ({
+        ...emptyBatchForm,
+        productId: current.productId,
+      }));
+      return;
+    }
+    setBatchForm(emptyBatchForm);
+  };
+
+  const handleBatchSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!uuid) {
+      toast({
+        title: "Missing manufacturer ID",
+        description: "Please sign in again to refresh your manufacturer profile.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!batchForm.productId) {
+      toast({ title: "Select a product for this batch", variant: "destructive" });
+      return;
+    }
+    const facility = batchForm.facility.trim();
+    if (!facility) {
+      toast({ title: "Facility name is required", variant: "destructive" });
+      return;
+    }
+    const productionStartIso = normalizeDateTimeToIso(batchForm.productionStartTime);
+    const productionEndIso = normalizeDateTimeToIso(batchForm.productionEndTime);
+    const startMs = Date.parse(productionStartIso);
+    const endMs = Date.parse(productionEndIso);
+    if (!productionStartIso || Number.isNaN(startMs)) {
+      toast({ title: "Enter a valid production start time", variant: "destructive" });
+      return;
+    }
+    if (!productionEndIso || Number.isNaN(endMs)) {
+      toast({ title: "Enter a valid production end time", variant: "destructive" });
+      return;
+    }
+    if (startMs > endMs) {
+      toast({ title: "Start time cannot be after end time", variant: "destructive" });
+      return;
+    }
+    const quantity = batchForm.quantityProduced.trim();
+    if (!quantity || Number.isNaN(Number(quantity)) || Number(quantity) <= 0) {
+      toast({ title: "Enter a valid quantity produced", variant: "destructive" });
+      return;
+    }
+    if (!batchForm.expiryDate) {
+      toast({ title: "Expiry date is required", variant: "destructive" });
+      return;
+    }
+
+    const payload: CreateBatchRequest = {
+      productId: batchForm.productId,
+      manufacturerUUID: uuid,
       facility,
-      productionStart,
-      productionEnd,
-      quantityProduced,
-      releaseStatus,
-      expiryDate,
-      handlingInstructions,
-      requiredStartTemp,
-      requiredEndTemp,
-    } = batchForm;
-
-    if (!productCategory.trim()) return "Product category is required.";
-    if (!facility.trim()) return "Facility name is required.";
-    if (!productionStart || !isValidISODate(productionStart))
-      return "Production start date is required (YYYY-MM-DD).";
-    if (!productionEnd || !isValidISODate(productionEnd))
-      return "Production end date is required (YYYY-MM-DD).";
-
-    const start = new Date(productionStart);
-    const end = new Date(productionEnd);
-    if (start > end)
-      return "Production start date must be before or equal to end date.";
-
-    if (!quantityProduced.trim() || isNaN(Number(quantityProduced)))
-      return "Quantity produced must be a valid number.";
-
-    if (!releaseStatus.trim())
-      return "Release status is required (e.g., QA_PASSED).";
-
-    if (!expiryDate.trim() || !isValidISODate(expiryDate))
-      return "Expiry date must be YYYY-MM-DD.";
-
-    if (!handlingInstructions.trim())
-      return "Handling instructions are required.";
-
-    if (!requiredStartTemp.trim() || isNaN(Number(requiredStartTemp)))
-      return "Required start temperature must be a number.";
-    if (!requiredEndTemp.trim() || isNaN(Number(requiredEndTemp)))
-      return "Required end temperature must be a number.";
-    if (Number(requiredStartTemp) > Number(requiredEndTemp))
-      return "Start temperature cannot exceed end temperature.";
-
-    return null;
-  };
-
-  const validateProductForm = () => {
-    const f = productForm;
-
-    if (!selectedBatch) return "Select a batch first.";
-    if (!f.productCategory.trim()) return "Product category is required.";
-    if (!f.productName.trim()) return "Product name is required.";
-    if (!f.quantity.trim() || Number.isNaN(Number(f.quantity)))
-      return "Quantity is required (numeric).";
-    if (Number(f.quantity) <= 0)
-      return "Quantity must be greater than zero.";
-    if (!/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(f.microprocessorMac.trim())) return "Microprocessor MAC must be in format 00:1A:2B:3C:4D:5E.";
-    if (!f.sensorTypes.trim()) return "Sensor types (e.g., temperature,humidity) required.";
-    if (!f.wifiSSID.trim()) return "Wi-Fi SSID is required.";
-    if (!f.wifiPassword.trim()) return "Wi-Fi Password is required.";
-    if (!f.status) return "Status is required.";
-    if (!statusOptions.includes(f.status as VaccineProductStatus))
-      return "Select a valid status.";
-
-    return null;
-  };
-
-
-  // ============================
-  // ðŸ”¹ Form Submit Handlers
-  // ============================
-  const handleBatchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const error = validateBatchForm();
-    if (error) return toast.error(error);
-
-    const productionWindow = `${batchForm.productionStart}T00:00:00Z/${batchForm.productionEnd}T23:59:59Z`;
-
-    const payload: BatchPayload = {
-      productCategory: batchForm.productCategory.trim(),
-      manufacturerUUID:
-        batchForm.manufacturerUUID.trim() || (uuid ? uuid.trim() : ""),
-      facility: batchForm.facility.trim(),
-      productionWindow, // ISO interval
-      quantityProduced: batchForm.quantityProduced.trim(),
-      releaseStatus: batchForm.releaseStatus.trim(),
-      expiryDate: batchForm.expiryDate.trim(),
-      handlingInstructions: batchForm.handlingInstructions.trim(),
-      requiredStartTemp: batchForm.requiredStartTemp.trim(),
-      requiredEndTemp: batchForm.requiredEndTemp.trim(),
+      productionStartTime: productionStartIso,
+      productionEndTime: productionEndIso,
+      quantityProduced: quantity,
+      expiryDate: batchForm.expiryDate,
     };
-
-    if (editingBatchId) {
-      updateBatchMutation.mutate({ id: editingBatchId, data: payload });
-    } else {
-      createBatchMutation.mutate(payload);
-    }
+    registerBatch.mutate(payload);
   };
 
-  const handleProductSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const error = validateProductForm();
-    if (error) return toast.error(error);
-
-    const manufacturerId =
-      productForm.manufacturerUUID.trim() || (uuid ? uuid.trim() : "");
-
-    const selectedStatus = statusOptions.includes(
-      productForm.status as VaccineProductStatus
-    )
-      ? (productForm.status as VaccineProductStatus)
-      : "PRODUCT_CREATED";
-
-    const quantityValue = Number(productForm.quantity);
-
-    const payload = {
-      manufacturerUUID: manufacturerId,
-      productName: productForm.productName.trim(),
-      productCategory: productForm.productCategory.trim(),
-      batchId: selectedBatch,
-      quantity: Number.isFinite(quantityValue) ? quantityValue : undefined,
-      microprocessorMac: productForm.microprocessorMac.trim().toUpperCase(),
-      sensorTypes: productForm.sensorTypes.trim(),
-      wifiSSID: productForm.wifiSSID.trim(),
-      wifiPassword: productForm.wifiPassword.trim(),
-      status: selectedStatus,
-    };
-
-    if (editingProductId) {
-      updateProductMutation.mutate({ id: editingProductId, data: payload });
-    } else {
-      createProductMutation.mutate(payload);
-    }
-  };
-
-
-  // ============================
-  // ðŸ”¹ UI
-  // ============================
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-6">Manage Products & Batches</h1>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Product Catalog</h1>
+          <p className="text-muted-foreground">Maintain product categories and register new products.</p>
+        </div>
+      </div>
 
-      <Tabs defaultValue="products" className="w-full">
-        <TabsList className="mb-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
           <TabsTrigger value="products">Products</TabsTrigger>
-          <TabsTrigger value="batches">Batches</TabsTrigger>
+          {categoriesEnabled && <TabsTrigger value="categories">Categories</TabsTrigger>}
         </TabsList>
 
-        {/* ðŸ§¾ Products Tab */}
-        <TabsContent value="products">
+        <TabsContent value="products" className="space-y-6">
           <Card>
-            <CardHeader className="flex justify-between items-center">
-              <div className="flex flex-col justify-center mr-auto">
-                <CardTitle>All Products</CardTitle>
-                <CardDescription>
-                  Manage vaccine product registry
-                </CardDescription>
-              </div>
-
-              {/* âž• Create Product Button */}
-              <Dialog
-                open={isProductDialogOpen}
-                onOpenChange={(open) => {
-                  setIsProductDialogOpen(open);
-                  if (!open) {
-                    setEditingProductId(null);
-                    setProductForm(createEmptyProductForm(uuid));
-                    setSelectedBatch("");
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button className="ml-auto" onClick={handleOpenNewProduct}>
-                    <Plus className="w-4 h-4 mr-1" /> Create Product
-                  </Button>
-                </DialogTrigger>
-
-                <DialogContent className="max-w-3xl max-h-[95vh] flex flex-col mx-auto p-6">
-                  <DialogHeader>
-                    <DialogTitle className="text-xl font-semibold">
-                      {isEditingProduct ? "Edit Product" : "Create New Product"}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {isEditingProduct
-                        ? "Update product registration details."
-                        : "Link a new product to an existing batch."}
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <form
-                    onSubmit={handleProductSubmit}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 overflow-y-auto p-5"
-                  >
-                    {/* ðŸ§© Left Column */}
-                    <div className="space-y-3 ">
-                      <div>
-                        <label
-                          htmlFor="select-batch"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Select Batch
-                        </label>
-                        <Select
-                          value={selectedBatch}
-                          onValueChange={(v) => setSelectedBatch(v)}
-                        >
-                          <SelectTrigger
-                            id="select-batch"
-                            aria-label="Select Batch"
-                          >
-                            <SelectValue placeholder="Choose batch" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {batches?.map((b: any) => (
-                              <SelectItem key={b.id} value={b.id.toString()}>
-                                {b.facility} - {b.productionWindow}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="productName"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Product Name
-                        </label>
-                        <Input
-                          id="productName"
-                          name="productName"
-                          placeholder="Pfizer Vaccine"
-                          value={productForm.productName}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="productCategory" className="font-medium text-sm mb-1 block">
-                          Product Category
-                        </label>
-                        <Input
-                          id="productCategory"
-                          name="productCategory"
-                          placeholder="IoT"
-                          value={productForm.productCategory}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="quantity" className="font-medium text-sm mb-1 block">
-                          Quantity
-                        </label>
-                        <Input
-                          id="quantity"
-                          name="quantity"
-                          type="number"
-                          min="1"
-                          placeholder="25"
-                          value={productForm.quantity}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div className="hidden">
-                        <label
-                          htmlFor="requiredStorageTemp"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Required Storage Temperature
-                        </label>
-                        <Input
-                          id="requiredStorageTemp"
-                          name="requiredStorageTemp"
-                          placeholder="2â€“8Â°C"
-                          value={productForm.requiredStorageTemp}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div className="hidden">
-                        <label
-                          htmlFor="expiryDate"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Expiry Date
-                        </label>
-                        <Input
-                          id="expiryDate"
-                          name="expiryDate"
-                          type="date"
-                          value={productForm.expiryDate}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      {/* <div>
-                        <label
-                          htmlFor="sensorDeviceUUID"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Sensor Device UUID
-                        </label>
-                        <Input
-                          id="sensorDeviceUUID"
-                          name="sensorDeviceUUID"
-                          placeholder="SENSOR-1001"
-                          value={productForm.sensorDeviceUUID}
-                          onChange={handleProductChange}
-                        />
-                      </div> */}
-
-                      <div>
-                        <label
-                          htmlFor="microprocessorMac"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Microprocessor MAC Address
-                        </label>
-                        <Input
-                          id="microprocessorMac"
-                          name="microprocessorMac"
-                          placeholder="00:1A:2B:3C:4D:5E"
-                          value={productForm.microprocessorMac}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-                      <div className="hidden">
-                        <label htmlFor="transportRoutePlanId" className="font-medium text-sm mb-1 block">
-                          Transport Route Plan ID
-                        </label>
-                        <Input
-                          id="transportRoutePlanId"
-                          name="transportRoutePlanId"
-                          placeholder="route-plan-2025-05"
-                          value={productForm.transportRoutePlanId}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="status" className="font-medium text-sm mb-1 block">
-                          Status
-                        </label>
-                        <Select
-                          value={productForm.status}
-                          onValueChange={(v) =>
-                            setProductForm((f) => ({ ...f, status: v }))
-                          }
-                        >
-                          <SelectTrigger id="status" aria-label="Status">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statusOptions.map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status.replace(/_/g, " ")}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                    </div>
-
-                    {/* ðŸ§© Right Column */}
-                    <div className="space-y-3">
-                      <div className="hidden">
-                        <label
-                          htmlFor="handlingInstructions"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Handling Instructions
-                        </label>
-                        <Textarea
-                          id="handlingInstructions"
-                          name="handlingInstructions"
-                          placeholder="Handle with care. Do not freeze."
-                          value={productForm.handlingInstructions}
-                          onChange={handleProductChange}
-                          className="h-[100px]"
-                        />
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="sensorTypes"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Sensor Types
-                        </label>
-                        <Input
-                          id="sensorTypes"
-                          name="sensorTypes"
-                          placeholder="GPS, Temperature"
-                          value={productForm.sensorTypes}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      {/* <div>
-                        <label
-                          htmlFor="qrId"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          QR ID
-                        </label>
-                        <Input
-                          id="qrId"
-                          name="qrId"
-                          placeholder="QR-12345"
-                          value={productForm.qrId}
-                          onChange={handleProductChange}
-                        />
-                      </div> */}
-
-                      <div>
-                        <label
-                          htmlFor="wifiSSID"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Wi-Fi SSID
-                        </label>
-                        <Input
-                          id="wifiSSID"
-                          name="wifiSSID"
-                          placeholder="PfizerNet"
-                          value={productForm.wifiSSID}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="wifiPassword"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Wi-Fi Password
-                        </label>
-                        <Input
-                          id="wifiPassword"
-                          name="wifiPassword"
-                          placeholder="securepass123"
-                          value={productForm.wifiPassword}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-
-                      <div className="hidden">
-                        <label
-                          htmlFor="originFacilityAddr"
-                          className="font-medium text-sm mb-1 block"
-                        >
-                          Origin Facility Address
-                        </label>
-                        <Input
-                          id="originFacilityAddr"
-                          name="originFacilityAddr"
-                          placeholder="Pfizer Lab NY - Line 1"
-                          value={productForm.originFacilityAddr}
-                          onChange={handleProductChange}
-                        />
-                      </div>
-                    </div>
-
-                    {/* ðŸ§­ Full-width submit button */}
-                    <div className="md:col-span-2 pt-2">
-                      <Button
-                        type="submit"
-                        className="w-full"
-                        disabled={isSubmittingProduct}
-                      >
-                        {isSubmittingProduct ? (
-                          <>
-                            <Loader2 className="animate-spin w-4 h-4 mr-2" />{" "}
-                            {isEditingProduct ? "Updating..." : "Creating..."}
-                          </>
-                        ) : isEditingProduct ? (
-                          "Update Product"
-                        ) : (
-                          "Create Product"
-                        )}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+            <CardHeader>
+              <CardTitle>Create Product</CardTitle>
             </CardHeader>
-
             <CardContent>
-              {loadingProducts ? (
-                <div className="flex justify-center items-center py-10">
-                  <Loader2 className="animate-spin w-6 h-6" />
+              <form onSubmit={handleProductSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium">Product Name</label>
+                  <Input
+                    value={productForm.productName}
+                    onChange={(event) => setProductForm({ ...productForm, productName: event.target.value })}
+                    placeholder="Pfizer"
+                    required
+                  />
                 </div>
-              ) : products?.length === 0 ? (
-                <p className="text-muted-foreground">No products found.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="bg-muted">
-                        <th className="p-2 border text-left">Product UUID</th>
-                        <th className="p-2 border text-left">Name</th>
-                        <th className="p-2 border text-left">Category</th>
-                        <th className="p-2 border text-left">Batch ID</th>
-                        <th className="p-2 border text-left">Status</th>
-                        <th className="p-2 border text-left">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {products?.map((p: any) => (
-                        <tr key={p.productUUID ?? p.id} className="hover:bg-muted/30">
-                          <td className="p-2 border">{p.id ?? p.productUUID}</td>
-                          <td className="p-2 border">{p.productName}</td>
-                          <td className="p-2 border">{p.productCategory}</td>
-                          <td className="p-2 border">{p.batchId ?? p.batchUUID}</td>
-                          <td className="p-2 border">{p.status}</td>
-                          <td className="p-2 border">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1"
-                              onClick={() => handleEditProduct(p)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Edit
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+
+                <div>
+                  <label className="text-sm font-medium">Category</label>
+                  {loadingCategories ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading categories...
+                    </div>
+                  ) : categories.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {categoriesEnabled ? "Create a category first." : "No categories available."}
+                    </p>
+                  ) : (
+                    <Select
+                      value={productForm.productCategoryId}
+                      onValueChange={(value) => setProductForm({ ...productForm, productCategoryId: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
-              )}
+
+                <div>
+                  <label className="text-sm font-medium">Category (preview)</label>
+                  <Input value={selectedCategoryName} readOnly />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Required Start Temp</label>
+                  <Input
+                    value={productForm.requiredStartTemp}
+                    onChange={(event) => setProductForm({ ...productForm, requiredStartTemp: event.target.value })}
+                    placeholder="2C"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Required End Temp</label>
+                  <Input
+                    value={productForm.requiredEndTemp}
+                    onChange={(event) => setProductForm({ ...productForm, requiredEndTemp: event.target.value })}
+                    placeholder="8C"
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium">Handling Instructions</label>
+                  <Textarea
+                    value={productForm.handlingInstructions}
+                    onChange={(event) => setProductForm({ ...productForm, handlingInstructions: event.target.value })}
+                    placeholder="Keep upright"
+                    rows={3}
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={resetProductForm}>
+                    Clear
+                  </Button>
+                  <Button type="submit" disabled={createProduct.isPending}>
+                    {createProduct.isPending ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Creating...
+                      </span>
+                    ) : (
+                      "Create Product"
+                    )}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* ðŸ§± Batches Tab */}
-        <TabsContent value="batches">
           <Card>
-            <CardHeader className="flex justify-between items-center">
-              <div className="flex flex-col justify-center mr-auto">
-                <CardTitle>All Batches</CardTitle>
-                <CardDescription>Manage all production batches</CardDescription>
-              </div>
-
-              {/* âž• Create Batch Button */}
-              <Dialog
-                open={isBatchDialogOpen}
-                onOpenChange={(open) => {
-                  setIsBatchDialogOpen(open);
-                  if (!open) {
-                    setEditingBatchId(null);
-                    setBatchForm(createEmptyBatchForm(uuid));
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button className="ml-auto" onClick={handleOpenNewBatch}>
-                    <Plus className="w-4 h-4 mr-1" /> Create Batch
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-3xl max-h-[95vh] flex flex-col mx-auto p-6">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {isEditingBatch ? "Edit Batch" : "Create New Batch"}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {isEditingBatch
-                        ? "Update the batch details and save your changes."
-                        : "Fill in details to create a new batch."}
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <form
-                    onSubmit={handleBatchSubmit}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 overflow-y-auto p-5"
-                  >
-                    <div className="md:col-span-2">
-                      <label htmlFor="productCategory" className="font-medium text-sm mb-1 block">
-                        Product Category
-                      </label>
-                      <Input
-                        id="productCategory"
-                        name="productCategory"
-                        placeholder="COVID Test Kits"
-                        value={batchForm.productCategory}
-                        onChange={handleBatchChange}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="facility"
-                        className="font-medium text-sm mb-1 block"
-                      >
-                        Facility Name
-                      </label>
-                      <Input
-                        id="facility"
-                        name="facility"
-                        placeholder="Pfizer Lab NY - Line 1"
-                        value={batchForm.facility}
-                        onChange={handleBatchChange}
-                      />
-                    </div>
-
-                    {/* Production Window: start + end date pickers (will be sent as ISO interval) */}
-                    <div className="md:col-span-2">
-                      <label className="font-medium text-sm mb-1 block">
-                        Production Window
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Input
-                          id="productionStart"
-                          name="productionStart"
-                          type="date"
-                          value={batchForm.productionStart}
-                          onChange={handleBatchChange}
-                          aria-label="Production start date"
-                          placeholder="YYYY-MM-DD"
-                        />
-                        <Input
-                          id="productionEnd"
-                          name="productionEnd"
-                          type="date"
-                          value={batchForm.productionEnd}
-                          onChange={handleBatchChange}
-                          aria-label="Production end date"
-                          placeholder="YYYY-MM-DD"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="quantityProduced" className="font-medium text-sm mb-1 block">
-                        Quantity Produced
-                      </label>
-                      <Input
-                        id="quantityProduced"
-                        name="quantityProduced"
-                        placeholder="5000"
-                        value={batchForm.quantityProduced}
-                        onChange={handleBatchChange}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="releaseStatus" className="font-medium text-sm mb-1 block">
-                        Release Status
-                      </label>
-                      <Input
-                        id="releaseStatus"
-                        name="releaseStatus"
-                        placeholder="QA_PASSED"
-                        value={batchForm.releaseStatus}
-                        onChange={handleBatchChange}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="expiryDate" className="font-medium text-sm mb-1 block">
-                        Batch Expiry Date
-                      </label>
-                      <Input
-                        id="expiryDate"
-                        name="expiryDate"
-                        type="date"
-                        value={batchForm.expiryDate}
-                        onChange={handleBatchChange}
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label htmlFor="handlingInstructions" className="font-medium text-sm mb-1 block">
-                        Handling Instructions
-                      </label>
-                      <Textarea
-                        id="handlingInstructions"
-                        name="handlingInstructions"
-                        placeholder="Keep upright; avoid direct sunlight"
-                        value={batchForm.handlingInstructions}
-                        onChange={(e) => setBatchForm({ ...batchForm, handlingInstructions: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-medium text-sm mb-1 block">Required Temperature Range (Â°C)</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input
-                          id="requiredStartTemp"
-                          name="requiredStartTemp"
-                          type="number"
-                          placeholder="2"
-                          value={batchForm.requiredStartTemp}
-                          onChange={handleBatchChange}
-                        />
-                        <Input
-                          id="requiredEndTemp"
-                          name="requiredEndTemp"
-                          type="number"
-                          placeholder="8"
-                          value={batchForm.requiredEndTemp}
-                          onChange={handleBatchChange}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-2 pt-2">
-                      <Button
-                        type="submit"
-                        disabled={isSubmittingBatch}
-                        className="w-full"
-                      >
-                        {isSubmittingBatch ? (
-                          <>
-                            <Loader2 className="animate-spin w-4 h-4 mr-2" />
-                            {isEditingBatch ? "Updating..." : "Creating..."}
-                          </>
-                        ) : isEditingBatch ? (
-                          "Update Batch"
-                        ) : (
-                          "Create Batch"
-                        )}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+            <CardHeader>
+              <CardTitle>Register Batch</CardTitle>
             </CardHeader>
-
             <CardContent>
-              {loadingBatches ? (
-                <div className="flex justify-center items-center py-10">
-                  <Loader2 className="animate-spin w-6 h-6" />
+              <form onSubmit={handleBatchSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium">Product</label>
+                  {loadingAllProducts ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading products...
+                    </div>
+                  ) : allProducts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Create a product before registering batches.</p>
+                  ) : (
+                    <Select
+                      value={batchForm.productId}
+                      onValueChange={(value) => setBatchForm((prev) => ({ ...prev, productId: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allProducts.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.productName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
-              ) : batches?.length === 0 ? (
-                <p className="text-muted-foreground">No batches found.</p>
+
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium">Manufacturer UUID</label>
+                  <Input value={uuid ?? ""} readOnly placeholder="Not available" />
+                  {!uuid ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Manufacturer identifier unavailable. Please reauthenticate to populate this field.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium">Facility</label>
+                  <Input
+                    value={batchForm.facility}
+                    onChange={(event) => setBatchForm((prev) => ({ ...prev, facility: event.target.value }))}
+                    placeholder="Plant A"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Production Start</label>
+                  <Input
+                    type="datetime-local"
+                    value={batchForm.productionStartTime}
+                    onChange={(event) => setBatchForm((prev) => ({ ...prev, productionStartTime: event.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Production End</label>
+                  <Input
+                    type="datetime-local"
+                    value={batchForm.productionEndTime}
+                    onChange={(event) => setBatchForm((prev) => ({ ...prev, productionEndTime: event.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Quantity Produced</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={batchForm.quantityProduced}
+                    onChange={(event) => setBatchForm((prev) => ({ ...prev, quantityProduced: event.target.value }))}
+                    placeholder="7500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Expiry Date</label>
+                  <Input
+                    type="date"
+                    value={batchForm.expiryDate}
+                    onChange={(event) => setBatchForm((prev) => ({ ...prev, expiryDate: event.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => resetBatchForm()}>
+                    Clear
+                  </Button>
+                  <Button type="submit" disabled={registerBatch.isPending || !uuid || allProducts.length === 0}>
+                    {registerBatch.isPending ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Registering...
+                      </span>
+                    ) : (
+                      "Register Batch"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>Registered Products</CardTitle>
+              <div className="w-full sm:w-64">
+                <Select value={productListSelectValue} onValueChange={handleProductListCategoryChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingProducts ? (
+                <div className="flex items-center gap-2 text-muted-foreground py-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading products...
+                </div>
+              ) : products.length === 0 ? (
+                <p className="text-muted-foreground">No products have been created yet.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="bg-muted">
-                        <th className="p-2 border text-left">ID</th>
-                        <th className="p-2 border text-left">Facility</th>
-                        <th className="p-2 border text-left">Quantity</th>
-                        <th className="p-2 border text-left">
-                          Production Window
-                        </th>
-                        <th className="p-2 border text-left">Release Status</th>
-                        <th className="p-2 border text-left">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batches?.map((b: any) => (
-                        <tr key={b.id} className="hover:bg-muted/30">
-                          <td className="p-2 border">{b.id}</td>
-                          <td className="p-2 border">{b.facility}</td>
-                      <td className="p-2 border">{b.quantityProduced}</td>
-                      <td className="p-2 border">{b.productionWindow}</td>
-                      <td className="p-2 border">{b.releaseStatus}</td>
-                      <td className="p-2 border">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {products.map((product) => (
+                    <Card key={product.id} className="border border-border/60">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-lg">{product.productName}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Category</p>
+                          <p className="font-medium">
+                            {product.productCategoryName ?? categoryLookup[product.productCategoryId] ?? "—"}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-muted-foreground text-xs uppercase">Start Temp</p>
+                            <p className="font-medium">{product.requiredStartTemp ?? "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs uppercase">End Temp</p>
+                            <p className="font-medium">{product.requiredEndTemp ?? "—"}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs uppercase">Handling</p>
+                          <p className="font-medium whitespace-pre-wrap">{product.handlingInstructions ?? "—"}</p>
+                        </div>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex items-center gap-1"
-                          onClick={() => handleEditBatch(b)}
+                          className="mt-2 gap-2"
+                          onClick={() => handleEditProduct(product)}
                         >
                           <Pencil className="h-4 w-4" />
                           Edit
                         </Button>
-                      </td>
-                    </tr>
+                      </CardContent>
+                    </Card>
                   ))}
-                    </tbody>
-                  </table>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
+
+        {categoriesEnabled && (
+          <TabsContent value="categories" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Create Category</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!categoryName.trim()) {
+                      toast({ title: "Category name is required", variant: "destructive" });
+                      return;
+                    }
+                    createCategory.mutate();
+                  }}
+                  className="flex flex-col md:flex-row gap-2"
+                >
+                  <Input
+                    value={categoryName}
+                    onChange={(event) => setCategoryName(event.target.value)}
+                    placeholder="Vaccine"
+                    required
+                  />
+                  <Button type="submit" disabled={createCategory.isPending}>
+                    {createCategory.isPending ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Creating...
+                      </span>
+                    ) : (
+                      "Create Category"
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Existing Categories</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingCategories ? (
+                  <div className="flex items-center gap-2 text-muted-foreground py-6">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading categories...
+                  </div>
+                ) : categories.length === 0 ? (
+                  <p className="text-muted-foreground">No categories created yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {categories.map((category) => (
+                      <li key={category.id} className="rounded-md border border-border/60 px-4 py-3">
+                        <p className="font-medium">{category.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Created {category.createdAt ? new Date(category.createdAt).toLocaleString() : "unknown"}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
+
+      <Dialog open={isProductDialogOpen} onOpenChange={(open) => setIsProductDialogOpen(open)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Product</DialogTitle>
+            <DialogDescription>Update the key attributes for this product.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateProduct} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Product Name</label>
+              <Input
+                value={productForm.productName}
+                onChange={(event) => setProductForm({ ...productForm, productName: event.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Category</label>
+              <Select
+                value={productForm.productCategoryId}
+                onValueChange={(value) => setProductForm({ ...productForm, productCategoryId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="text-sm font-medium">Required Start Temp</label>
+                <Input
+                  value={productForm.requiredStartTemp}
+                  onChange={(event) => setProductForm({ ...productForm, requiredStartTemp: event.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Required End Temp</label>
+                <Input
+                  value={productForm.requiredEndTemp}
+                  onChange={(event) => setProductForm({ ...productForm, requiredEndTemp: event.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Handling Instructions</label>
+              <Textarea
+                value={productForm.handlingInstructions}
+                onChange={(event) => setProductForm({ ...productForm, handlingInstructions: event.target.value })}
+                rows={3}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsProductDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateProduct.isPending}>
+                {updateProduct.isPending ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </span>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-
-
-
-
-

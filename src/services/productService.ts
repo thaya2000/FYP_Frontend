@@ -1,71 +1,48 @@
-// src/services/productRegistryService.ts
 import { api } from "./api";
-import type { VaccineProduct, VaccineProductStatus } from '@/types';
+import type { Product } from "@/types";
 
-/** Payload the backend expects for product creation */
 export interface CreateProductRequest {
-    manufacturerUUID: string;
-    productName: string;
-    productCategory: string; // e.g., "IoT"
-    batchId: string; // UUID string
-    quantity?: number;
-    microprocessorMac: string; // AA:BB:CC:DD:EE:FF
-    sensorTypes: string; // temperature,humidity
-    wifiSSID: string;
-    wifiPassword: string;
-    status: VaccineProductStatus;
+  productName: string;
+  productCategoryId: string;
+  requiredStartTemp: string;
+  requiredEndTemp: string;
+  handlingInstructions: string;
 }
 
-/** Payload for updating an existing product (matches backend expectations) */
-export interface UpdateProductRequest {
-    manufacturerUUID?: string;
-    productName?: string;
-    productCategory?: string; // e.g., "IoT"
-    batchId?: string; // UUID string
-    requiredStorageTemp?: string;
-    transportRoutePlanId?: string;
-    handlingInstructions?: string;
-    expiryDate?: string; // YYYY-MM-DD
-    sensorDeviceUUID?: string;
-    microprocessorMac?: string; // AA:BB:CC:DD:EE:FF
-    sensorTypes?: string; // temperature,humidity,gps
-    qrId?: string;
-    wifiSSID?: string;
-    wifiPassword?: string;
-    originFacilityAddr?: string;
-    status?: VaccineProductStatus;
-    quantity?: number;
+export interface UpdateProductRequest extends Partial<CreateProductRequest> {}
+
+export interface ProductQuery {
+  categoryId?: string;
 }
 
-/** Service methods for product registry */
+const buildQueryString = (params?: ProductQuery) => {
+  if (!params) return "";
+  const searchParams = new URLSearchParams();
+  if (params.categoryId) {
+    searchParams.set("categoryId", params.categoryId);
+  }
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
+};
+
 export const productRegistryService = {
-    /**
-     * Create a new vaccine product in the backend registry
-     */
-    async registerProduct(
-        data: CreateProductRequest
-    ): Promise<VaccineProduct> {
-        const res = await api.post("/api/product-registry", data);
-        return res.data;
-    },
+  async registerProduct(data: CreateProductRequest): Promise<Product> {
+    const res = await api.post("/api/products", data);
+    return res.data;
+  },
 
-    /**
-     * Fetch all products registered under a manufacturer UUID
-     */
-    async getAllProducts(uuid: string): Promise<VaccineProduct[]> {
-        const res = await api.get(`/api/product-registry/manufacturer/${uuid}`);
-        return res.data;
-    },
+  async getAllProducts(params?: ProductQuery): Promise<Product[]> {
+    const res = await api.get(`/api/products${buildQueryString(params)}`);
+    return res.data;
+  },
 
-    /** Fetch a single product by its id */
-    async getProductById(id: string): Promise<VaccineProduct> {
-        const res = await api.get(`/api/product-registry/${id}`);
-        return res.data;
-    },
+  async getProductById(id: string): Promise<Product> {
+    const res = await api.get(`/api/products/${id}`);
+    return res.data;
+  },
 
-    /** Update an existing product */
-    async updateProduct(id: string, data: UpdateProductRequest): Promise<VaccineProduct> {
-        const res = await api.put(`/api/product-registry/${id}`, data);
-        return res.data;
-    },
+  async updateProduct(id: string, data: UpdateProductRequest): Promise<Product> {
+    const res = await api.put(`/api/products/${id}`, data);
+    return res.data;
+  },
 };

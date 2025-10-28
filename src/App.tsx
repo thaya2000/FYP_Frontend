@@ -22,7 +22,6 @@ import Analytics from "./pages/Analytics";
 import QRScannerPage from "./pages/QRScannerPage";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import Checkpoints from "./pages/Checkpoints";
-
 // 🆕 (Optional placeholders for admin/supplier/warehouse)
 import ManageUsers from "./pages/ManageUsers"; // For ADMIN
 // import Inventory from "./pages/Inventory"; // For WAREHOUSE

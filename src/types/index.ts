@@ -1,4 +1,11 @@
-export type Role = 'MANUFACTURER' | 'DISTRIBUTOR' | 'HEALTHCARE_PROVIDER' | 'VACCINATION_CENTER' | 'COLD_STORAGE' | 'TRANSPORTER' | 'REGULATORY';
+export type Role =
+  | "MANUFACTURER"
+  | "DISTRIBUTOR"
+  | "HEALTHCARE_PROVIDER"
+  | "VACCINATION_CENTER"
+  | "COLD_STORAGE"
+  | "TRANSPORTER"
+  | "REGULATORY";
 
 export interface UserProfile {
   id: string;
@@ -11,59 +18,87 @@ export interface UserProfile {
   certifications?: string[];
 }
 
-// src/types/product.ts (or wherever this lives)
+export type VaccineProductStatus = string;
 
-export type VaccineProductStatus =
-  | 'PRODUCT_CREATED'
-  | 'PRODUCT_READY_FOR_SHIPMENT'
-  | 'PRODUCT_ALLOCATED'
-  | 'PRODUCT_IN_TRANSIT'
-  | 'PRODUCT_DELIVERED'
-  | 'PRODUCT_RETURNED'
-  | 'PRODUCT_CANCELLED';
-
-export interface VaccineProduct {
+export interface ProductCategory {
   id: string;
-
-  productName: string;
-  productCategory: 'vaccine';           // backend returns "vaccine"
-  manufacturerUUID: string;
-  batchId: string;
-
-  requiredStorageTemp: string;
-  transportRoutePlanId: string;
-  handlingInstructions: string;
-  expiryDate: string;
-
-  microprocessorMac: string;
-  sensorTypes: string;
-
-  wifiSSID: string;
-  originFacilityAddr: string;
-
-  status: VaccineProductStatus;
-  quantity?: number;
-
-  // blockchain / audit
-  productHash: string;
-  txHash: string;
-  createdBy: `0x${string}`;
-  createdAt: string;
-  updatedBy: string | null;
-  updatedAt: string | null;
-
-  // IPFS / Pinata
-  pinataCid: string;
-  pinataPinnedAt: string;
-
-  // (Optional fields your UI may use during creation; keep optional so
-  // reading existing products doesn't require them.)
-  sensorDeviceUUID?: string;
-  qrId?: string;
-  wifiPassword?: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
+export interface Product {
+  id: string;
+  productName: string;
+  productCategoryId: string;
+  productCategoryName?: string;
+  requiredStartTemp?: string;
+  requiredEndTemp?: string;
+  handlingInstructions?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  // Legacy fields retained for mock data and backward compatibility
+  name?: string;
+  manufacturer?: string;
+  batchNumber?: string;
+  lotNumber?: string;
+  productionDate?: string;
+  expirationDate?: string;
+  vaccineType?: string;
+  dosesPerVial?: number;
+  totalDoses?: number;
+  remainingDoses?: number;
+  qrUri?: string;
+  creator?: string;
+  currentHolder?: string;
+  status?: string;
+  temperatureRange?: {
+    min: number;
+    max: number;
+    unit?: string;
+  };
+  storageRequirements?: string;
+  administrationInstructions?: string;
+}
 
+export type VaccineProduct = Product;
+
+export interface ProductBatchSummary {
+  id: string;
+  productId?: string;
+  productCategoryId?: string;
+  manufacturerUUID?: string;
+  facility?: string;
+  productionWindow?: string;
+  productionStart?: string;
+  productionEnd?: string;
+  productionStartTime?: string;
+  productionEndTime?: string;
+  batchCode?: string;
+  releaseStatus?: string;
+  quantityProduced?: string | number;
+  expiryDate?: string;
+  handlingInstructions?: string;
+  requiredStartTemp?: string;
+  requiredEndTemp?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProductPackage {
+  id: string;
+  batchId: string;
+  packageCode?: string;
+  quantity?: number;
+  quantityAvailable?: number;
+  unit?: string;
+  status?: string;
+  notes?: string;
+  manufacturerUUID?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface ColdChainPoint {
   ts: number;
@@ -88,7 +123,12 @@ export interface CustodyEvent {
   txHash?: `0x${string}`;
   checkpoint?: string;
   location?: string;
-  facilityType?: 'MANUFACTURING' | 'COLD_STORAGE' | 'DISTRIBUTION_CENTER' | 'HEALTHCARE_FACILITY' | 'VACCINATION_SITE';
+  facilityType?:
+    | "MANUFACTURING"
+    | "COLD_STORAGE"
+    | "DISTRIBUTION_CENTER"
+    | "HEALTHCARE_FACILITY"
+    | "VACCINATION_SITE";
   handoverDocuments?: string[];
   temperatureAtHandover?: number;
 }
@@ -96,8 +136,14 @@ export interface CustodyEvent {
 export interface VaccineAlert {
   id: string;
   productId: string;
-  level: 'INFO' | 'WARN' | 'CRITICAL' | 'EMERGENCY';
-  type: 'TEMPERATURE_BREACH' | 'EXPIRATION_WARNING' | 'COLD_CHAIN_BREAK' | 'RECALL' | 'LOW_STOCK' | 'EQUIPMENT_FAILURE';
+  level: "INFO" | "WARN" | "CRITICAL" | "EMERGENCY";
+  type:
+    | "TEMPERATURE_BREACH"
+    | "EXPIRATION_WARNING"
+    | "COLD_CHAIN_BREAK"
+    | "RECALL"
+    | "LOW_STOCK"
+    | "EQUIPMENT_FAILURE";
   message: string;
   ts: number;
   acknowledged?: boolean;
@@ -111,12 +157,22 @@ export interface VaccineShipment {
   productIds: string[];
   from: `0x${string}`;
   to: `0x${string}`;
-  status: 'PREPARING' | 'IN_TRANSIT' | 'DELIVERED' | 'DELAYED' | 'TEMPERATURE_COMPROMISED';
+  status:
+    | "PREPARING"
+    | "IN_TRANSIT"
+    | "DELIVERED"
+    | "DELAYED"
+    | "TEMPERATURE_COMPROMISED";
   createdAt: number;
   estimatedDelivery?: number;
   actualDelivery?: number;
-  route?: { lat: number; lng: number; name: string; facilityType?: string }[];
-  transportMode: 'REFRIGERATED_TRUCK' | 'AIR_CARGO' | 'COURIER' | 'DRONE';
+  route?: {
+    lat: number;
+    lng: number;
+    name: string;
+    facilityType?: string;
+  }[];
+  transportMode: "REFRIGERATED_TRUCK" | "AIR_CARGO" | "COURIER" | "DRONE";
   temperatureLog: ColdChainPoint[];
   driver?: string;
   vehicleId?: string;
@@ -126,7 +182,7 @@ export interface VaccineShipment {
 export interface TemperatureThreshold {
   min: number;
   max: number;
-  unit: 'C' | 'F';
+  unit: "C" | "F";
   vaccineType?: string;
   criticalMin?: number;
   criticalMax?: number;
@@ -157,7 +213,7 @@ export interface VaccinationRecord {
   verified: boolean;
 }
 
-// Legacy type aliases for backward compatibility
+// Legacy aliases
 export type ProductMeta = VaccineProduct;
 export type TelemetryPoint = ColdChainPoint;
 export type Alert = VaccineAlert;

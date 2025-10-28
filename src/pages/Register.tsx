@@ -163,6 +163,7 @@ export default function Register() {
 
   const requiresCheckpoint =
     form.type === "MANUFACTURER" || form.type === "WAREHOUSE";
+  const showCheckpointSection = requiresCheckpoint || form.type === "CONSUMER";
 
   const countryOptions = useMemo(() => {
     const countries = Country.getAllCountries();
@@ -618,7 +619,7 @@ export default function Register() {
             </div>
 
             {/* Checkpoint Details */}
-            {requiresCheckpoint && (
+            {showCheckpointSection && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>

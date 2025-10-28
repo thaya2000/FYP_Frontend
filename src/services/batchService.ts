@@ -1,17 +1,16 @@
 import { api } from "./api";
 
-export type BatchPayload = {
-  productCategory: string;
+export interface CreateBatchRequest {
+  productId: string;
   manufacturerUUID: string;
   facility: string;
-  productionWindow: string; // e.g. 2025-09-01T00:00:00Z/2025-09-03T23:59:59Z
+  productionStartTime: string;
+  productionEndTime: string;
   quantityProduced: string;
-  releaseStatus: string; // e.g. QA_PASSED
-  expiryDate: string; // YYYY-MM-DD
-  handlingInstructions: string;
-  requiredStartTemp: string; // e.g. "2"
-  requiredEndTemp: string; // e.g. "8"
-};
+  expiryDate: string;
+}
+
+export interface UpdateBatchRequest extends Partial<CreateBatchRequest> {}
 
 export const batchService = {
   async getAllBatches(uuid: string) {
@@ -19,17 +18,22 @@ export const batchService = {
     return res.data;
   },
 
-  async getBatchById(id: number) {
+  async getBatchesByProduct(productId: string) {
+    const res = await api.get(`/api/products/${productId}/batches`);
+    return res.data;
+  },
+
+  async getBatchById(id: number | string) {
     const res = await api.get(`/api/batches/${id}`);
     return res.data;
   },
 
-  async createBatch(data: BatchPayload) {
+  async createBatch(data: CreateBatchRequest) {
     const res = await api.post("/api/batches", data);
     return res.data;
   },
 
-  async updateBatch(id: string, data: BatchPayload) {
+  async updateBatch(id: string, data: UpdateBatchRequest) {
     const res = await api.put(`/api/batches/${id}`, data);
     return res.data;
   },

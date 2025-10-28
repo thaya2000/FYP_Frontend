@@ -10,11 +10,19 @@ export interface ShipmentItem {
   createdAt?: string;
 }
 
+export interface ShipmentPackagePayload {
+  product_category_id: string;
+  product_uuid: string;
+  batch_id: string;
+  package_id: string;
+  quantity: number;
+}
+
 // New backend schema for shipment creation
 export interface CreateShipmentRequest {
   manufacturerUUID: string;
   destinationPartyUUID: string;
-  shipmentItems: Array<{ product_uuid: string; quantity: number }>;
+  shipmentItems: ShipmentPackagePayload[];
   checkpoints: Array<{
     start_checkpoint_id: number | string;
     end_checkpoint_id: number | string;
