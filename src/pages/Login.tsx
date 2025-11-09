@@ -33,7 +33,8 @@ export default function LoginPage() {
       setStatus("Connecting to MetaMask...");
 
       // ✅ Step 1: Connect wallet
-      const connector = connectors.find((c) => c.id === "injected") ?? connectors[0];
+      const connector =
+        connectors.find((c) => c.id === "injected") ?? connectors[0];
       const { accounts } = await connectAsync({ connector });
       const address = accounts[0] as `0x${string}`;
       setWalletConnection(address);
@@ -46,13 +47,14 @@ export default function LoginPage() {
       setStatus("Please sign the message in MetaMask...");
 
       // After fetching nonce + address
-      const message = `Registry Login\nAddress: ${address.toLowerCase()}\nNonce: ${data.nonce}`;
+      const message = `Registry Login\nAddress: ${address.toLowerCase()}\nNonce: ${
+        data.nonce
+      }`;
 
       const signature = await signMessageAsync({
         account: address,
         message,
       });
-
 
       // const signature = await signMessageAsync({
       //   account: address,
@@ -65,10 +67,12 @@ export default function LoginPage() {
 
       // ✅ Step 5: Store JWT + role + address in Zustand store
       setAuth({
-        token: res.data.token,
+        token: res.data.accessToken,
+        refreshToken: res.data.refreshToken,
         role: res.data.role,
         address: res.data.address,
         uuid: res.data.uuid,
+        expiresIn: res.data.expiresIn,
       });
 
       setStatus("✅ Login successful! Redirecting...");
@@ -99,7 +103,9 @@ export default function LoginPage() {
             <img
               src={metamaskFox}
               alt="MetaMask"
-              className={`w-24 h-24 mb-2 ${loading ? "animate-bounce" : "animate-pulse"}`}
+              className={`w-24 h-24 mb-2 ${
+                loading ? "animate-bounce" : "animate-pulse"
+              }`}
             />
           </div>
         </CardContent>
@@ -108,10 +114,11 @@ export default function LoginPage() {
           <Button
             disabled={loading}
             onClick={handleLogin}
-            className={`w-full font-semibold py-2 text-white ${loading
-              ? "bg-gray-700 hover:bg-gray-700 cursor-not-allowed"
-              : "bg-orange-500 hover:bg-orange-600"
-              }`}
+            className={`w-full font-semibold py-2 text-white ${
+              loading
+                ? "bg-gray-700 hover:bg-gray-700 cursor-not-allowed"
+                : "bg-orange-500 hover:bg-orange-600"
+            }`}
           >
             {loading ? (
               <div className="flex items-center justify-center gap-2">

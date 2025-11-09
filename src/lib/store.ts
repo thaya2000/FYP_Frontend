@@ -12,8 +12,10 @@ import { setAuthToken } from "@/lib/api";
 interface AppState {
   // 🔐 Auth & Wallet
   token?: string;
+  refreshToken?: string;
   role?: string;
   uuid?: string; // <-- optional UUID saved only if provided
+  expiresIn?: string;
   walletAddress: `0x${string}` | null;
   isConnected: boolean;
 
@@ -45,9 +47,11 @@ interface AppState {
   // 🔐 Auth actions
   setAuth: (data: {
     token: string;
+    refreshToken?: string;
     role: string;
     address: `0x${string}`;
     uuid?: string; // <-- optional in payload
+    expiresIn?: string;
   }) => void;
   logout: () => void;
   setWalletConnection: (address: `0x${string}` | null) => void;
@@ -80,8 +84,10 @@ export const useAppStore = create<AppState>()(
       // Initial state
       user: null,
       token: undefined,
+      refreshToken: undefined,
       role: undefined,
       uuid: undefined, // <-- start undefined
+      expiresIn: undefined,
       isConnected: false,
       walletAddress: null,
       products: [],
@@ -98,15 +104,17 @@ export const useAppStore = create<AppState>()(
       setUser: (user) => set({ user }),
 
       // 🔐 Auth actions
-      setAuth: ({ token, role, address, uuid }) => {
+      setAuth: ({ token, refreshToken, role, address, uuid, expiresIn }) => {
         // Reset any mock or stale data when authenticating
         set({
           token,
+          refreshToken,
           role,
           walletAddress: address,
           isConnected: true,
           user: null, // ✅ Clear any previous mock user
           ...(uuid ? { uuid } : {}), // ✅ save UUID only if present
+          ...(expiresIn ? { expiresIn } : {}), // ✅ save expiresIn only if present
         });
         setAuthToken(token); // ✅ apply JWT to Axios instance
       },
@@ -114,8 +122,10 @@ export const useAppStore = create<AppState>()(
       logout: () => {
         set({
           token: undefined,
+          refreshToken: undefined,
           role: undefined,
           uuid: undefined, // ✅ clear UUID on logout
+          expiresIn: undefined,
           walletAddress: null,
           isConnected: false,
           user: null,
@@ -195,8 +205,10 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         // ✅ Only persist what is safe and useful
         token: state.token,
+        refreshToken: state.refreshToken,
         role: state.role,
         uuid: state.uuid, // ✅ persist UUID if present
+        expiresIn: state.expiresIn,
         walletAddress: state.walletAddress,
         temperatureUnit: state.temperatureUnit,
         darkMode: state.darkMode,

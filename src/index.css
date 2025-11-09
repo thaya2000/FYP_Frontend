@@ -1,9 +1,9 @@
+/* Web3 Supply Chain Design System */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Web3 Supply Chain Design System */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -53,10 +53,22 @@
     --radius-lg: 1rem;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
-    --gradient-success: linear-gradient(135deg, hsl(var(--secondary)), hsl(142 76% 45%));
-    --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
-    
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(var(--primary)),
+      hsl(var(--primary-glow))
+    );
+    --gradient-success: linear-gradient(
+      135deg,
+      hsl(var(--secondary)),
+      hsl(142 76% 45%)
+    );
+    --gradient-glass: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.1),
+      rgba(255, 255, 255, 0.05)
+    );
+
     /* Shadows */
     --shadow-glow: 0 0 20px hsl(var(--primary) / 0.15);
     --shadow-success: 0 0 20px hsl(var(--secondary) / 0.15);
@@ -121,7 +133,11 @@
     --ring: 220 100% 55%;
 
     /* Dark mode gradients */
-    --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    --gradient-glass: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0.02)
+    );
     --shadow-glow: 0 0 25px hsl(var(--primary) / 0.25);
     --shadow-success: 0 0 25px hsl(var(--secondary) / 0.25);
     --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -144,23 +160,23 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
   }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   ::-webkit-scrollbar-track {
     background: hsl(var(--muted));
   }
-  
+
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
     border-radius: 3px;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
   }
@@ -171,11 +187,11 @@
   .status-ok {
     @apply bg-secondary/10 text-secondary border border-secondary/20;
   }
-  
+
   .status-warning {
     @apply bg-warning/10 text-warning-foreground border border-warning/20;
   }
-  
+
   .status-critical {
     @apply bg-destructive/10 text-destructive border border-destructive/20;
   }
@@ -191,7 +207,7 @@
   .glow-primary {
     box-shadow: var(--shadow-glow);
   }
-  
+
   .glow-success {
     box-shadow: var(--shadow-success);
   }
