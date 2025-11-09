@@ -1,20 +1,45 @@
-import { Bell, Settings, User, Package, Truck, Warehouse } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { useAppStore } from '@/lib/store';
+import {
+  Bell,
+  Settings,
+  User,
+  Package,
+  Truck,
+  Warehouse,
+  LogOut,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useAppStore } from "@/lib/store";
+import { useNavigate } from "react-router-dom";
+import { useDisconnect } from "wagmi";
 
 export function Header() {
-  const { user, unreadAlertsCount } = useAppStore();
+  const { user, unreadAlertsCount, logout } = useAppStore();
+  const navigate = useNavigate();
+  const { disconnect } = useDisconnect();
+
+  const handleLogout = () => {
+    logout();
+    disconnect();
+    navigate("/login");
+  };
 
   const getRoleIcon = (role: string) => {
     switch (role) {
-      case 'MANUFACTURER': return Package;
-      case 'TRANSPORTER': return Truck;
-      case 'WAREHOUSE': return Warehouse;
-      case 'WHOLESALER': return Package;
-      case 'RETAILER': return Package;
-      case 'END_USER': return User;
-      default: return User;
+      case "MANUFACTURER":
+        return Package;
+      case "TRANSPORTER":
+        return Truck;
+      case "WAREHOUSE":
+        return Warehouse;
+      case "WHOLESALER":
+        return Package;
+      case "RETAILER":
+        return Package;
+      case "END_USER":
+        return User;
+      default:
+        return User;
     }
   };
 
@@ -40,9 +65,9 @@ export function Header() {
             <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-muted/50">
               <RoleIcon className="w-4 h-4 text-primary" />
               <div className="text-sm">
-                <p className="font-medium">{user.displayName || 'User'}</p>
+                <p className="font-medium">{user.displayName || "User"}</p>
                 <p className="text-xs text-muted-foreground capitalize">
-                  {user.role.toLowerCase().replace('_', ' ')}
+                  {user.role.toLowerCase().replace("_", " ")}
                 </p>
               </div>
             </div>
@@ -64,9 +89,17 @@ export function Header() {
             <Settings className="w-4 h-4" />
           </Button>
 
-          {/* <Button size="sm" className="bg-gradient-primary text-white border-0 hover:opacity-90">
-              Connect Wallet
-            </Button> */}
+          {user && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
+          )}
         </div>
       </div>
     </header>
