@@ -196,10 +196,6 @@ export function SupplierSection() {
     }
   };
 
-  const handleConfirmDelivery = (shipment: SupplierShipmentRecord) => {
-    toast.success(`Delivery for segment ${getSegmentReference(shipment)} confirmed.`);
-  };
-
   const handleDownloadProof = (shipment: SupplierShipmentRecord) => {
     toast.info(`Downloading records for segment ${getSegmentReference(shipment)} (demo).`);
   };
@@ -227,107 +223,12 @@ export function SupplierSection() {
     }
   };
 
-  const renderStatusAction = (status: SupplierShipmentStatus, shipment: SupplierShipmentRecord) => {
-    const segmentIdentifier = getSegmentReference(shipment);
-    switch (status) {
-      case "PENDING": {
-        const isAccepting =
-          supplier.acceptShipmentPending && supplier.acceptingShipmentId === segmentIdentifier;
-        return (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                size="sm"
-                className="gap-2"
-                disabled={
-                  supplier.acceptShipmentPending && supplier.acceptingShipmentId === segmentIdentifier
-                }
-              >
-                {isAccepting ? (
-                  <>
-                    <LoaderIndicator />
-                    Accepting...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    Accept
-                  </>
-                )}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Accept segment {segmentIdentifier}?</AlertDialogTitle>
-              </AlertDialogHeader>
-              <p className="text-sm text-muted-foreground">
-                Confirm the contents and condition before accepting. The manufacturer will be notified.
-              </p>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => supplier.acceptShipment(String(segmentIdentifier))}
-                  disabled={
-                    supplier.acceptShipmentPending &&
-                    supplier.acceptingShipmentId === segmentIdentifier
-                  }
-                >
-                  Confirm
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        );
-      }
-      case "ACCEPTED":
-        {
-          const isTakingOver =
-            supplier.takeoverPending && supplier.takeoverSegmentId === segmentIdentifier;
-          return (
-            <Button
-              size="sm"
-              className="gap-2"
-              disabled={isTakingOver}
-              onClick={() => openTakeoverDialog(shipment)}
-            >
-              {isTakingOver ? (
-                <>
-                  <LoaderIndicator />
-                  Taking over...
-                </>
-              ) : (
-                "Take Over"
-              )}
-            </Button>
-          );
-      }
-      case "IN_TRANSIT":
-        return (
-          <Button size="sm" onClick={() => openHandoverDialog(shipment)}>
-            Handover
-          </Button>
-        );
-      case "DELIVERED":
-        return (
-          <Button size="sm" variant="secondary" onClick={() => handleConfirmDelivery(shipment)}>
-            Confirm Delivery
-          </Button>
-        );
-      case "CLOSED":
-        return (
-          <Button size="sm" variant="secondary" onClick={() => handleDownloadProof(shipment)}>
-            Download Proof
-          </Button>
-        );
-      case "CANCELLED":
-        return (
-          <Button size="sm" variant="secondary" onClick={() => handleReportIssue(shipment)}>
-            Report Issue
-          </Button>
-        );
-      default:
-        return null;
-    }
+  const actionContext: SupplierActionContext = {
+    supplier,
+    openHandoverDialog,
+    openTakeoverDialog,
+    handleDownloadProof,
+    handleReportIssue,
   };
 
   return (
@@ -348,80 +249,20 @@ export function SupplierSection() {
           })}
         </TabsList>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={supplier.areaQuery}
-              onChange={(event) => supplier.setAreaQuery(event.target.value)}
-              placeholder="Search by area, checkpoint, or delivery zone"
-              className="pl-9"
-            />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:justify-end">
-            <span className="max-w-xs">
-              Filters supplier consignments across all tabs by logistics area.
-            </span>
-            {hasAreaFilter && (
-              <Button variant="ghost" size="sm" onClick={() => supplier.setAreaQuery("")}>
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
+        <SupplierSectionFilters
+          areaQuery={supplier.areaQuery}
+          setAreaQuery={supplier.setAreaQuery}
+          hasAreaFilter={hasAreaFilter}
+        />
 
-        {statusOrder.map((status) => {
-          const config = STATUS_CONFIG[status];
-          const shipments = supplier.shipmentsByStatus[status] ?? [];
-          const filteredShipments = supplier.filterShipmentsByArea(shipments);
-          const isLoading = supplier.loadingByStatus?.[status] ?? false;
-          const EmptyIcon = hasAreaFilter ? MapPin : config.icon;
-          const emptyTitle = hasAreaFilter ? config.emptyFilteredTitle : config.emptyTitle;
-          const emptyDescription = hasAreaFilter
-            ? "Try a different area or clear the filter to see all consignments."
-            : config.emptyDescription;
-
-          return (
-            <TabsContent key={status} value={status}>
-              <SupplierSectionHeader title={config.title} description={config.description} />
-              {isLoading ? (
-                <SupplierEmptyState
-                  icon={config.icon}
-                  title={config.loadingTitle}
-                  description={config.loadingDescription}
-                  isLoading
-                />
-              ) : filteredShipments.length === 0 ? (
-                <SupplierEmptyState
-                  icon={EmptyIcon}
-                  title={emptyTitle}
-                  description={emptyDescription}
-                />
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {filteredShipments.map((shipment) => {
-                    const segmentIdentifier = shipment.segmentId ?? shipment.id;
-                    return (
-                      <SupplierShipmentCard
-                        key={`${shipment.id}-${status}`}
-                        shipment={shipment}
-                        actions={
-                          <div className="flex flex-wrap gap-2">
-                            {renderStatusAction(status, shipment)}
-                            <ViewShipmentButton
-                              segmentId={segmentIdentifier}
-                              shipmentId={shipment.shipmentId}
-                            />
-                          </div>
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </TabsContent>
-          );
-        })}
+        <SupplierStatusPanels
+          statusOrder={statusOrder}
+          shipmentsByStatus={supplier.shipmentsByStatus}
+          loadingByStatus={supplier.loadingByStatus}
+          filterShipmentsByArea={supplier.filterShipmentsByArea}
+          hasAreaFilter={hasAreaFilter}
+          actionContext={actionContext}
+        />
       </Tabs>
 
       <SupplierHandoverDialog />
@@ -493,6 +334,234 @@ export function SupplierSection() {
     </div>
   );
 }
+
+type SupplierSectionFiltersProps = {
+  areaQuery: string;
+  setAreaQuery: (value: string) => void;
+  hasAreaFilter: boolean;
+};
+
+function SupplierSectionFilters({ areaQuery, setAreaQuery, hasAreaFilter }: SupplierSectionFiltersProps) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="relative w-full sm:max-w-xs">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={areaQuery}
+          onChange={(event) => setAreaQuery(event.target.value)}
+          placeholder="Search by area, checkpoint, or delivery zone"
+          className="pl-9"
+        />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:justify-end">
+        <span className="max-w-xs">
+          Filters supplier consignments across all tabs by logistics area.
+        </span>
+        {hasAreaFilter && (
+          <Button variant="ghost" size="sm" onClick={() => setAreaQuery("")}>
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type SupplierStatusPanelsProps = {
+  statusOrder: SupplierShipmentStatus[];
+  shipmentsByStatus: Record<SupplierShipmentStatus, SupplierShipmentRecord[]>;
+  loadingByStatus: Record<SupplierShipmentStatus, boolean>;
+  filterShipmentsByArea: (shipments: SupplierShipmentRecord[]) => SupplierShipmentRecord[];
+  hasAreaFilter: boolean;
+  actionContext: SupplierActionContext;
+};
+
+const SupplierStatusPanels = ({
+  statusOrder,
+  shipmentsByStatus,
+  loadingByStatus,
+  filterShipmentsByArea,
+  hasAreaFilter,
+  actionContext,
+}: SupplierStatusPanelsProps) => (
+  <>
+    {statusOrder.map((status) => {
+      const config = STATUS_CONFIG[status];
+      const shipments = shipmentsByStatus[status] ?? [];
+      const filteredShipments = filterShipmentsByArea(shipments);
+      const isLoading = loadingByStatus?.[status] ?? false;
+      const EmptyIcon = hasAreaFilter ? MapPin : config.icon;
+      const emptyTitle = hasAreaFilter ? config.emptyFilteredTitle : config.emptyTitle;
+      const emptyDescription = hasAreaFilter
+        ? "Try a different area or clear the filter to see all consignments."
+        : config.emptyDescription;
+
+      return (
+        <TabsContent key={status} value={status}>
+          <SupplierSectionHeader title={config.title} description={config.description} />
+          {isLoading ? (
+            <SupplierEmptyState
+              icon={config.icon}
+              title={config.loadingTitle}
+              description={config.loadingDescription}
+              isLoading
+            />
+          ) : filteredShipments.length === 0 ? (
+            <SupplierEmptyState icon={EmptyIcon} title={emptyTitle} description={emptyDescription} />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredShipments.map((shipment) => {
+                const segmentIdentifier = shipment.segmentId ?? shipment.id;
+                return (
+                  <SupplierShipmentCard
+                    key={`${shipment.id}-${status}`}
+                    shipment={shipment}
+                    actions={
+                      <div className="flex flex-wrap gap-2">
+                        <SupplierShipmentActions
+                          status={status}
+                          shipment={shipment}
+                          context={actionContext}
+                        />
+                        <ViewShipmentButton
+                          segmentId={segmentIdentifier}
+                          shipmentId={shipment.shipmentId}
+                        />
+                      </div>
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      );
+    })}
+  </>
+);
+
+type SupplierActionContext = {
+  supplier: ReturnType<typeof useSupplierContext>;
+  openHandoverDialog: (shipment: SupplierShipmentRecord) => void;
+  openTakeoverDialog: (shipment: SupplierShipmentRecord) => void;
+  handleDownloadProof: (shipment: SupplierShipmentRecord) => void;
+  handleReportIssue: (shipment: SupplierShipmentRecord) => void;
+};
+
+type SupplierShipmentActionsProps = {
+  status: SupplierShipmentStatus;
+  shipment: SupplierShipmentRecord;
+  context: SupplierActionContext;
+};
+
+const SupplierShipmentActions = ({ status, shipment, context }: SupplierShipmentActionsProps) => {
+  const { supplier, openHandoverDialog, openTakeoverDialog, handleDownloadProof, handleReportIssue } = context;
+  if (!supplier.enabled) return null;
+  const segmentIdentifier = shipment.segmentId ?? shipment.id;
+  const allowAction = (
+    flag: keyof NonNullable<SupplierShipmentRecord["actions"]>,
+  ): boolean => {
+    const permissions = shipment.actions;
+    if (!permissions || typeof permissions[flag] === "undefined") return true;
+    return Boolean(permissions[flag]);
+  };
+
+  switch (status) {
+    case "PENDING": {
+      const canAccept = allowAction("canAccept");
+      const isAccepting =
+        supplier.acceptShipmentPending && supplier.acceptingShipmentId === segmentIdentifier;
+      return (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              size="sm"
+              className="gap-2"
+              disabled={isAccepting || !canAccept}
+            >
+              {isAccepting ? (
+                <>
+                  <LoaderIndicator />
+                  Accepting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Accept
+                </>
+              )}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Accept segment {segmentIdentifier}?</AlertDialogTitle>
+            </AlertDialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Confirm the contents and condition before accepting. The manufacturer will be notified.
+            </p>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => supplier.acceptShipment(String(segmentIdentifier))}
+                disabled={
+                  !canAccept ||
+                  (supplier.acceptShipmentPending &&
+                    supplier.acceptingShipmentId === segmentIdentifier)
+                }
+              >
+                Confirm
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      );
+    }
+    case "ACCEPTED": {
+      const canTakeover = allowAction("canTakeover");
+      const isTakingOver =
+        supplier.takeoverPending && supplier.takeoverSegmentId === segmentIdentifier;
+      return (
+        <Button
+          size="sm"
+          className="gap-2"
+          disabled={isTakingOver || !canTakeover}
+          onClick={() => openTakeoverDialog(shipment)}
+        >
+          {isTakingOver ? (
+            <>
+              <LoaderIndicator />
+              Taking over...
+            </>
+          ) : (
+            "Take Over"
+          )}
+        </Button>
+      );
+    }
+    case "IN_TRANSIT": {
+      const canHandover = allowAction("canHandover");
+      return (
+        <Button size="sm" onClick={() => openHandoverDialog(shipment)} disabled={!canHandover}>
+          Handover
+        </Button>
+      );
+    }
+    case "CLOSED":
+      return (
+        <Button size="sm" variant="secondary" onClick={() => handleDownloadProof(shipment)}>
+          Download Proof
+        </Button>
+      );
+    case "CANCELLED":
+      return (
+        <Button size="sm" variant="secondary" onClick={() => handleReportIssue(shipment)}>
+          Report Issue
+        </Button>
+      );
+    default:
+      return null;
+  }
+};
 
 type SupplierSectionHeaderProps = {
   title: string;

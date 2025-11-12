@@ -34,6 +34,13 @@ export type SupplierShipmentRecord = {
   timeTolerance?: string;
   segmentOrder?: number;
   shipmentId?: string;
+  actions?: {
+    canAccept?: boolean;
+    canTakeover?: boolean;
+    canHandover?: boolean;
+    canDeliver?: boolean;
+    [key: string]: boolean | undefined;
+  };
   shipmentItems?: Array<{ product_uuid?: string; productName?: string; quantity?: number }>;
   items?: Array<{ product_uuid?: string; productName?: string; quantity?: number }>;
   checkpoints?: Array<{

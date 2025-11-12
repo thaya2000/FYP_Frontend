@@ -230,6 +230,7 @@ type ShipmentSegmentResponse = {
   items?: SupplierShipmentRecord["items"];
   shipmentItems?: SupplierShipmentRecord["shipmentItems"];
   checkpoints?: SupplierShipmentRecord["checkpoints"];
+  actions?: SupplierShipmentRecord["actions"];
   [key: string]: unknown;
 };
 
@@ -353,68 +354,8 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
     timeTolerance: segment.timeTolerance ?? segment.time_tolerance ?? undefined,
     startCheckpoint: segment.startCheckpoint ?? undefined,
     endCheckpoint: segment.endCheckpoint ?? undefined,
+    actions: segment.actions ?? undefined,
   };
-};
-
-const mockSupplierShipments = {
-  pool: [
-    {
-      id: "POOL-1024",
-      manufacturerName: "Acme Manufacturing",
-      fromUUID: "0xA1F4…2dc1",
-      status: "PENDING",
-      expectedArrival: new Date(Date.now() + 1000 * 60 * 90).toISOString(),
-      shipmentItems: [
-        { productName: "COVID Test Kits", quantity: 500 },
-        { productName: "Protective Gloves", quantity: 1000 },
-      ],
-    },
-  ],
-  accepted: [
-    {
-      id: "ACC-2048",
-      manufacturerName: "MedTech Labs",
-      fromUUID: "0xB7C2…9a51",
-      status: "ACCEPTED",
-      expectedArrival: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-      acceptedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      shipmentItems: [{ productName: "Immuno Booster Packs", quantity: 250 }],
-    },
-  ],
-  pickedUp: [
-    {
-      id: "PICK-3056",
-      manufacturerName: "PharmaX",
-      fromUUID: "0x9931…7f1d",
-      status: "IN_TRANSIT",
-      expectedArrival: new Date(Date.now() + 1000 * 60 * 45).toISOString(),
-      acceptedAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-      destinationCheckpoint: "Central Cold Chain Hub",
-      shipmentItems: [{ productName: "Proximity Sensor Kit", quantity: 25 }],
-    },
-  ],
-  delivered: [
-    {
-      id: "DELIV-4096",
-      manufacturerName: "BioSecure Inc.",
-      fromUUID: "0x71A3…5c42",
-      status: "DELIVERED",
-      expectedArrival: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-      handedOverAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-      destinationCheckpoint: "Receiver Warehouse",
-      shipmentItems: [{ productName: "Thermal Packaging Units", quantity: 40 }],
-    },
-  ],
-  history: [
-    {
-      id: "HIST-5120",
-      manufacturerName: "Acme Manufacturing",
-      fromUUID: "0xA1F4…2dc1",
-      status: "CLOSED",
-      handedOverAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-      shipmentItems: [{ productName: "COVID Test Kits", quantity: 600 }],
-    },
-  ],
 };
 
 export const HandoverProvider = ({ children }: { children: React.ReactNode }) => {
@@ -711,29 +652,14 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     }
   }, [handoverForm, handoverTarget, queryClient, resetHandoverForm, uuid]);
 
-  const fallbackByStatus = useMemo<
-    Partial<Record<SupplierShipmentStatus, SupplierShipmentRecord[]>>
-  >(
-    () => ({
-      PENDING: mockSupplierShipments.pool,
-      ACCEPTED: mockSupplierShipments.accepted,
-      IN_TRANSIT: mockSupplierShipments.pickedUp,
-      DELIVERED: mockSupplierShipments.delivered,
-      CLOSED: mockSupplierShipments.history,
-      CANCELLED: [],
-    }),
-    [],
-  );
-
   const shipmentsByStatus = useMemo(() => {
     const buckets = createStatusBuckets();
     SUPPLIER_STATUS_ORDER.forEach((status, index) => {
       const query = supplierSegmentsQueries[index];
-      const entries = query?.data ?? [];
-      buckets[status] = entries.length > 0 ? entries : fallbackByStatus[status] ?? [];
+      buckets[status] = query?.data ?? [];
     });
     return buckets;
-  }, [supplierSegmentsQueries, fallbackByStatus]);
+  }, [supplierSegmentsQueries]);
 
   const loadingByStatus = useMemo(() => {
     return SUPPLIER_STATUS_ORDER.reduce((acc, status, index) => {
@@ -755,31 +681,7 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     [areaQuery],
   );
 
-  const recentHandovers = useMemo(
-    () => [
-      {
-        id: "h1",
-        productId: "prod-001",
-        productName: "Organic Coffee Beans",
-        from: "0x742d35Cc6634C0532925a3b8D8b5C4e0c5E42F2B",
-        to: "0x8ba1f109551bD432803012645Hac136c30c6213c",
-        timestamp: Date.now() - 3_600_000,
-        status: "completed",
-        checkpoint: "Central Warehouse",
-      },
-      {
-        id: "h2",
-        productId: "prod-002",
-        productName: "Premium Tea Selection",
-        from: "0x8ba1f109551bD432803012645Hac136c30c6213c",
-        to: "0x456d35Cc6634C0532925a3b8D8b5C4e0c5E42F2B",
-        timestamp: Date.now() - 7_200_000,
-        status: "pending",
-        checkpoint: "Distribution Center",
-      },
-    ],
-    [],
-  );
+  const recentHandovers = useMemo(() => [], []);
 
   const manufacturer: ManufacturerContextValue = {
     enabled: role === "MANUFACTURER",

@@ -47,7 +47,6 @@ export interface PackageResponse {
 export interface PackageRegistryPayload {
   manufacturerUUID: string;
   batchId: string;
-  quantity: number;
   microprocessorMac: string;
   sensorTypes: string[];
 }

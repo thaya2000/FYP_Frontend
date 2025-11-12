@@ -22,14 +22,12 @@ import { useAppStore } from "@/lib/store";
 
 type PackageFormState = {
   batchId: string;
-  quantity: string;
   microprocessorMac: string;
   sensorTypes: string;
 };
 
 const emptyPackageForm = (): PackageFormState => ({
   batchId: "",
-  quantity: "",
   microprocessorMac: "",
   sensorTypes: "",
 });
@@ -59,6 +57,49 @@ const formatHash = (value?: string | null) => {
   if (!value) return "Not available";
   if (value.length <= 12) return value;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+};
+
+const productionTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const toProductionLabel = (value?: string | null) => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return productionTimeFormatter.format(date);
+};
+
+const deriveBatchProductionWindow = (batch: ProductBatchSummary) => {
+  const start = toProductionLabel(batch.productionStartTime ?? batch.productionStart);
+  const end = toProductionLabel(batch.productionEndTime ?? batch.productionEnd);
+
+  let detail: string | undefined;
+  if (start && end) {
+    detail = `${start} – ${end}`;
+  } else if (start) {
+    detail = start;
+  } else if (end) {
+    detail = end;
+  } else {
+    detail =
+      typeof batch.productionWindow === "string" && batch.productionWindow.trim().length > 0
+        ? batch.productionWindow.trim()
+        : batch.batchCode ?? undefined;
+  }
+
+  const fallback = `Batch ${batch.id ?? ""}`.trim();
+  const baseLabel = detail ?? fallback;
+
+  if (baseLabel.toLowerCase().startsWith("batch")) {
+    return baseLabel;
+  }
+
+  return `Batch - ${baseLabel}`;
 };
 
 export function PackageManagement() {
@@ -101,7 +142,7 @@ export function PackageManagement() {
     () =>
       batches.map((batch) => ({
         value: String(batch.id),
-        label: batch.batchCode || `Batch ${batch.id}`,
+        label: deriveBatchProductionWindow(batch),
       })),
     [batches],
   );
@@ -166,17 +207,9 @@ export function PackageManagement() {
       });
       return;
     }
-    if (!createForm.quantity) {
-      toast({
-        variant: "destructive",
-        title: "Quantity required",
-      });
-      return;
-    }
     createMutation.mutate({
       manufacturerUUID,
       batchId: createForm.batchId,
-      quantity: Number(createForm.quantity),
       microprocessorMac: createForm.microprocessorMac.trim(),
       sensorTypes: parseSensors(createForm.sensorTypes),
     });
@@ -296,7 +329,6 @@ export function PackageManagement() {
                     setEditingPackage(pkg);
                     setEditForm({
                       packageCode: pkg.packageCode ?? "",
-                      quantity: pkg.quantity,
                       status: pkg.status,
                       notes: pkg.notes,
                     });
@@ -364,20 +396,6 @@ export function PackageManagement() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="package-quantity" className="text-sm font-medium">
-                Quantity
-              </label>
-              <Input
-                id="package-quantity"
-                type="number"
-                min={1}
-                value={createForm.quantity}
-                onChange={(event) => setCreateForm((current) => ({ ...current, quantity: event.target.value }))}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
               <label htmlFor="package-mac" className="text-sm font-medium">
                 Microprocessor MAC
               </label>
@@ -431,24 +449,6 @@ export function PackageManagement() {
                 id="edit-package-code"
                 value={editForm.packageCode ?? ""}
                 onChange={(event) => setEditForm((current) => ({ ...current, packageCode: event.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="edit-package-quantity" className="text-sm font-medium">
-                Quantity
-              </label>
-              <Input
-                id="edit-package-quantity"
-                type="number"
-                value={editForm.quantity ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setEditForm((current) => ({
-                    ...current,
-                    quantity: value ? Number(value) : undefined,
-                  }));
-                }}
               />
             </div>
 
