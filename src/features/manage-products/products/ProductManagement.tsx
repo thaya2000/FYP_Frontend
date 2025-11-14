@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { productRegistryService, type CreateProductRequest, type UpdateProductRequest } from "@/services/productService";
 import { productCategoryService } from "@/services/productCategoryService";
@@ -27,6 +26,22 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+};
+
+const formatDetailedDateTime = (value?: string) => {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const datePart = date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${datePart} · ${timePart}`;
 };
 
 export function ProductManagement() {
@@ -142,24 +157,39 @@ export function ProductManagement() {
   const renderProducts = () => {
     if (loadingProducts) {
       return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Card key={`product-skeleton-${index}`} className="border-border/50">
-              <CardHeader>
-                <Skeleton className="h-5 w-2/3" />
-                <Skeleton className="h-4 w-1/3" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-4 w-1/3" />
-              </CardContent>
-              <CardFooter className="justify-end gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </CardFooter>
-            </Card>
-          ))}
+        <div className="overflow-x-auto rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Temperature</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <TableRow key={`product-skeleton-${index}`}>
+                <TableCell>
+                  <Skeleton className="h-5 w-40" />
+                    <Skeleton className="mt-2 h-4 w-64" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-28" />
+                </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Skeleton className="h-8 w-16" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       );
     }
@@ -181,61 +211,62 @@ export function ProductManagement() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {products.map((product) => {
-          const categoryName =
-            product.productCategory?.name ||
-            categoryLookup.get(product.productCategoryId) ||
-            "Uncategorised";
-          return (
-            <Card key={product.id} className="border-border/60 shadow-none">
-              <CardHeader>
-                <CardTitle className="flex items-start justify-between gap-2">
-                  <span>{product.productName}</span>
-                  <Badge variant="outline">{categoryName}</Badge>
-                </CardTitle>
-                {product.handlingInstructions ? (
-                  <CardDescription className="line-clamp-2">{product.handlingInstructions}</CardDescription>
-                ) : null}
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  <span className="text-foreground">Temperature:</span>{" "}
-                  {product.requiredStartTemp && product.requiredEndTemp
-                    ? `${product.requiredStartTemp} - ${product.requiredEndTemp}`
-                    : "Not specified"}
-                </p>
-                <p>
-                  <span className="text-foreground">Created:</span> {formatDateTime(product.createdAt)}
-                </p>
-                <p>
-                  <span className="text-foreground">Updated:</span> {formatDateTime(product.updatedAt)}
-                </p>
-              </CardContent>
-              <CardFooter className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setViewingProduct(product)}>
-                  View
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setEditingProduct(product);
-                    setEditForm({
-                      productName: product.productName ?? "",
-                      productCategoryId: product.productCategoryId,
-                      requiredStartTemp: product.requiredStartTemp ?? "",
-                      requiredEndTemp: product.requiredEndTemp ?? "",
-                      handlingInstructions: product.handlingInstructions ?? "",
-                    });
-                  }}
-                >
-                  Edit
-                </Button>
-              </CardFooter>
-            </Card>
-          );
-        })}
+      <div className="overflow-x-auto rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Temperature</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {products.map((product) => {
+              const categoryName =
+                product.productCategory?.name ||
+                categoryLookup.get(product.productCategoryId) ||
+                "Uncategorised";
+              const temperature =
+                product.requiredStartTemp && product.requiredEndTemp
+                  ? `${product.requiredStartTemp} - ${product.requiredEndTemp}`
+                  : "Not specified";
+
+              return (
+                <TableRow key={product.id}>
+                  <TableCell>
+                    <div className="font-medium text-foreground">{product.productName}</div>
+                  </TableCell>
+                  <TableCell>{categoryName}</TableCell>
+                  <TableCell>{temperature}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setViewingProduct(product)}>
+                        View
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setEditingProduct(product);
+                          setEditForm({
+                            productName: product.productName ?? "",
+                            productCategoryId: product.productCategory?.id ?? product.productCategoryId ?? "",
+                            requiredStartTemp: product.requiredStartTemp ?? "",
+                            requiredEndTemp: product.requiredEndTemp ?? "",
+                            handlingInstructions: product.handlingInstructions ?? "",
+                          });
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </div>
     );
   };
@@ -245,41 +276,36 @@ export function ProductManagement() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Products</h2>
-          <p className="text-sm text-muted-foreground">
-            Register products and keep temperature and handling requirements up to date.
-          </p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
-          <PlusCircle className="h-4 w-4" />
-          Create Product
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="sm:w-64">
+            <label htmlFor="product-category-filter" className="sr-only">
+              Category filter
+            </label>
+            <Select
+              value={categoryFilter}
+              onValueChange={setCategoryFilter}
+              disabled={loadingCategories && categories.length === 0}
+            >
+              <SelectTrigger id="product-category-filter">
+                <SelectValue placeholder="All categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {filteredCategories.map((category) => (
+                  <SelectItem value={category.value} key={category.value}>
+                    {category.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
+            <PlusCircle className="h-4 w-4" />
+            Create Product
+          </Button>
+        </div>
       </header>
-
-      <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-medium">Filter</div>
-        <div className="sm:w-64">
-          <label htmlFor="product-category-filter" className="sr-only">
-            Category filter
-          </label>
-          <Select
-            value={categoryFilter}
-            onValueChange={setCategoryFilter}
-            disabled={loadingCategories && categories.length === 0}
-          >
-            <SelectTrigger id="product-category-filter">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {filteredCategories.map((category) => (
-                <SelectItem value={category.value} key={category.value}>
-                  {category.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
 
       {renderProducts()}
 
@@ -287,7 +313,9 @@ export function ProductManagement() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create Product</DialogTitle>
-            <DialogDescription>Capture the critical handling details for your new product.</DialogDescription>
+            <DialogDescription>
+              Capture the critical handling details for your new product.
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleCreateSubmit}>
             <div className="space-y-2">
@@ -298,7 +326,12 @@ export function ProductManagement() {
                 id="product-name"
                 placeholder="e.g. Comirnaty mRNA Vaccine"
                 value={createForm.productName}
-                onChange={(event) => setCreateForm((current) => ({ ...current, productName: event.target.value }))}
+                onChange={(event) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    productName: event.target.value,
+                  }))
+                }
                 required
               />
             </div>
@@ -308,7 +341,12 @@ export function ProductManagement() {
               </label>
               <Select
                 value={createForm.productCategoryId}
-                onValueChange={(value) => setCreateForm((current) => ({ ...current, productCategoryId: value }))}
+                onValueChange={(value) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    productCategoryId: value,
+                  }))
+                }
                 required
               >
                 <SelectTrigger id="product-category">
@@ -325,30 +363,49 @@ export function ProductManagement() {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label htmlFor="product-temp-start" className="text-sm font-medium">
+                <label
+                  htmlFor="product-temp-start"
+                  className="text-sm font-medium"
+                >
                   Required start temperature
                 </label>
                 <Input
                   id="product-temp-start"
                   placeholder="-70°C"
                   value={createForm.requiredStartTemp}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, requiredStartTemp: event.target.value }))}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      requiredStartTemp: event.target.value,
+                    }))
+                  }
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="product-temp-end" className="text-sm font-medium">
+                <label
+                  htmlFor="product-temp-end"
+                  className="text-sm font-medium"
+                >
                   Required end temperature
                 </label>
                 <Input
                   id="product-temp-end"
                   placeholder="-60°C"
                   value={createForm.requiredEndTemp}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, requiredEndTemp: event.target.value }))}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      requiredEndTemp: event.target.value,
+                    }))
+                  }
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label htmlFor="product-instructions" className="text-sm font-medium">
+              <label
+                htmlFor="product-instructions"
+                className="text-sm font-medium"
+              >
                 Handling instructions
               </label>
               <Textarea
@@ -356,16 +413,29 @@ export function ProductManagement() {
                 placeholder="Keep frozen. Thaw at room temperature before administration."
                 value={createForm.handlingInstructions}
                 onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, handlingInstructions: event.target.value }))
+                  setCreateForm((current) => ({
+                    ...current,
+                    handlingInstructions: event.target.value,
+                  }))
                 }
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="gap-2" disabled={createMutation.isPending}>
-                {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <Button
+                type="submit"
+                className="gap-2"
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 Create product
               </Button>
             </div>
@@ -373,31 +443,52 @@ export function ProductManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editingProduct)} onOpenChange={(open) => (!open ? setEditingProduct(null) : null)}>
+      <Dialog
+        open={Boolean(editingProduct)}
+        onOpenChange={(open) => (!open ? setEditingProduct(null) : null)}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Product</DialogTitle>
-            <DialogDescription>Adjust product details to keep information accurate.</DialogDescription>
+            <DialogDescription>
+              Adjust product details to keep information accurate.
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleEditSubmit}>
             <div className="space-y-2">
-              <label htmlFor="edit-product-name" className="text-sm font-medium">
+              <label
+                htmlFor="edit-product-name"
+                className="text-sm font-medium"
+              >
                 Product name
               </label>
               <Input
                 id="edit-product-name"
                 value={editForm.productName}
-                onChange={(event) => setEditForm((current) => ({ ...current, productName: event.target.value }))}
+                onChange={(event) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    productName: event.target.value,
+                  }))
+                }
                 required
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="edit-product-category" className="text-sm font-medium">
+              <label
+                htmlFor="edit-product-category"
+                className="text-sm font-medium"
+              >
                 Category
               </label>
               <Select
                 value={editForm.productCategoryId ?? ""}
-                onValueChange={(value) => setEditForm((current) => ({ ...current, productCategoryId: value }))}
+                onValueChange={(value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    productCategoryId: value,
+                  }))
+                }
                 required
               >
                 <SelectTrigger id="edit-product-category">
@@ -414,48 +505,76 @@ export function ProductManagement() {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label htmlFor="edit-product-temp-start" className="text-sm font-medium">
+                <label
+                  htmlFor="edit-product-temp-start"
+                  className="text-sm font-medium"
+                >
                   Required start temperature
                 </label>
                 <Input
                   id="edit-product-temp-start"
                   value={editForm.requiredStartTemp ?? ""}
                   onChange={(event) =>
-                    setEditForm((current) => ({ ...current, requiredStartTemp: event.target.value }))
+                    setEditForm((current) => ({
+                      ...current,
+                      requiredStartTemp: event.target.value,
+                    }))
                   }
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="edit-product-temp-end" className="text-sm font-medium">
+                <label
+                  htmlFor="edit-product-temp-end"
+                  className="text-sm font-medium"
+                >
                   Required end temperature
                 </label>
                 <Input
                   id="edit-product-temp-end"
                   value={editForm.requiredEndTemp ?? ""}
                   onChange={(event) =>
-                    setEditForm((current) => ({ ...current, requiredEndTemp: event.target.value }))
+                    setEditForm((current) => ({
+                      ...current,
+                      requiredEndTemp: event.target.value,
+                    }))
                   }
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label htmlFor="edit-product-instructions" className="text-sm font-medium">
+              <label
+                htmlFor="edit-product-instructions"
+                className="text-sm font-medium"
+              >
                 Handling instructions
               </label>
               <Textarea
                 id="edit-product-instructions"
                 value={editForm.handlingInstructions ?? ""}
                 onChange={(event) =>
-                  setEditForm((current) => ({ ...current, handlingInstructions: event.target.value }))
+                  setEditForm((current) => ({
+                    ...current,
+                    handlingInstructions: event.target.value,
+                  }))
                 }
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setEditingProduct(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingProduct(null)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="gap-2" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <Button
+                type="submit"
+                className="gap-2"
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 Save changes
               </Button>
             </div>
@@ -463,45 +582,82 @@ export function ProductManagement() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(viewingProduct)} onOpenChange={(open) => (!open ? setViewingProduct(null) : null)}>
+      <Dialog
+        open={Boolean(viewingProduct)}
+        onOpenChange={(open) => (!open ? setViewingProduct(null) : null)}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{viewingProduct?.productName}</DialogTitle>
             <DialogDescription>Product details</DialogDescription>
           </DialogHeader>
           {viewingProduct ? (
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">Category</p>
+            <div className="space-y-4">
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                {[
+                  {
+                    label: "Category",
+                    value:
+                      viewingProduct.productCategory?.name ??
+                      categoryLookup.get(viewingProduct.productCategoryId) ??
+                      "Uncategorised",
+                  },
+                  {
+                    label: "Temperature range",
+                    value:
+                      viewingProduct.requiredStartTemp &&
+                      viewingProduct.requiredEndTemp
+                        ? `${viewingProduct.requiredStartTemp} - ${viewingProduct.requiredEndTemp}`
+                        : "Not specified",
+                  },
+                ].map((detail) => (
+                  <div
+                    key={detail.label}
+                    className="rounded-lg border border-border/60 bg-background px-4 py-3"
+                  >
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {detail.label}
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {detail.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Handling instructions
+                </p>
                 <p className="text-foreground">
-                  {viewingProduct.productCategory?.name ??
-                    categoryLookup.get(viewingProduct.productCategoryId) ??
-                    "Uncategorised"}
+                  {viewingProduct.handlingInstructions?.trim() ||
+                    "Not provided"}
                 </p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Temperature range</p>
-                <p className="text-foreground">
-                  {viewingProduct.requiredStartTemp && viewingProduct.requiredEndTemp
-                    ? `${viewingProduct.requiredStartTemp} - ${viewingProduct.requiredEndTemp}`
-                    : "Not specified"}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Handling instructions</p>
-                <p className="text-foreground">
-                  {viewingProduct.handlingInstructions?.trim() || "Not provided"}
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div>
-                  <p className="text-muted-foreground">Created</p>
-                  <p className="text-foreground">{formatDateTime(viewingProduct.createdAt)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Updated</p>
-                  <p className="text-foreground">{formatDateTime(viewingProduct.updatedAt)}</p>
-                </div>
+
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                {[
+                  {
+                    label: "Created",
+                    value: formatDetailedDateTime(viewingProduct.createdAt),
+                  },
+                  {
+                    label: "Updated",
+                    value: formatDetailedDateTime(viewingProduct.updatedAt),
+                  },
+                ].map((detail) => (
+                  <div
+                    key={detail.label}
+                    className="rounded-lg border border-border/60 bg-background px-4 py-3"
+                  >
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {detail.label}
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {detail.value}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}
@@ -510,3 +666,6 @@ export function ProductManagement() {
     </section>
   );
 }
+
+
+

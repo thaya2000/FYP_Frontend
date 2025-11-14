@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, PlusCircle } from "lucide-react";
 import { batchService, type CreateBatchRequest, type UpdateBatchRequest } from "@/services/batchService";
 import { productRegistryService } from "@/services/productService";
@@ -43,6 +42,14 @@ const toDateTimeInputValue = (value?: string | null) => {
   return offsetDate.toISOString().slice(0, 16);
 };
 
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+};
+
 const normaliseDateTime = (value: string) => {
   const trimmed = value?.trim();
   if (!trimmed) return "";
@@ -65,6 +72,22 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+};
+
+const formatFriendlyDateTime = (value?: string) => {
+  if (!value) return "Not specified";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const datePart = date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${datePart} · ${timePart}`;
 };
 
 export function BatchManagement() {
@@ -197,24 +220,50 @@ export function BatchManagement() {
   const renderBatches = () => {
     if (loadingBatches) {
       return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Card key={`batch-skeleton-${index}`} className="border-border/50">
-              <CardHeader>
-                <Skeleton className="h-5 w-2/3" />
-                <Skeleton className="h-4 w-1/3" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
-              </CardContent>
-              <CardFooter className="justify-end gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </CardFooter>
-            </Card>
-          ))}
+        <div className="overflow-x-auto rounded-lg border border-border/60">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Batch</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>Facility</TableHead>
+                <TableHead>Quantity</TableHead>
+              <TableHead>Production window</TableHead>
+              <TableHead>Expiry</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <TableRow key={`batch-skeleton-${index}`}>
+                  <TableCell>
+                    <Skeleton className="h-5 w-40" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-44" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Skeleton className="h-8 w-16" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       );
     }
@@ -236,71 +285,87 @@ export function BatchManagement() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {batches.map((batch) => {
-          const product = batch.productId ? productLookup.get(batch.productId) : null;
-          const productName =
-            batch.product?.name ??
-            batch.product?.productName ??
-            product?.productName ??
-            product?.name ??
-            "Product";
-          const productionStart = batch.productionStart ?? batch.productionStartTime ?? batch.productionWindow;
-          const productionEnd = batch.productionEnd ?? batch.productionEndTime ?? null;
-          return (
-            <Card key={batch.id} className="border-border/60 shadow-none">
-              <CardHeader>
-                <CardTitle className="flex items-start justify-between gap-2">
-                  <span>{batch.batchCode || `Batch ${batch.id}`}</span>
-                  <Badge variant="outline">{productName}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  <span className="text-foreground">Facility:</span> {batch.facility || "Not specified"}
-                </p>
-                <p>
-                  <span className="text-foreground">Quantity:</span> {batch.quantityProduced || "Not specified"}
-                </p>
-                <p>
-                  <span className="text-foreground">Production window:</span>{" "}
-                  {productionStart
-                    ? productionEnd
-                      ? `${formatDateTime(productionStart)} � ${formatDateTime(productionEnd)}`
-                      : formatDateTime(productionStart)
-                    : "Not specified"}
-                </p>
-                <p>
-                  <span className="text-foreground">Expiry date:</span> {formatDateTime(batch.expiryDate)}
-                </p>
-              </CardContent>
-              <CardFooter className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setViewingBatch(batch)}>
-                  View
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setEditingBatch(batch);
-                    setEditForm({
-                      productId: batch.productId ?? "",
-                      manufacturerUUID,
-                      facility: batch.facility ?? "",
-                      productionStartTime: toDateTimeInputValue(batch.productionStartTime ?? batch.productionStart ?? batch.productionWindow ?? ""),
-                      productionEndTime: toDateTimeInputValue(batch.productionEndTime ?? batch.productionEnd ?? ""),
-                      quantityProduced: batch.quantityProduced ? String(batch.quantityProduced) : "",
-                      expiryDate: toDateTimeInputValue(batch.expiryDate),
-                    });
-                  }}
-                  disabled={!manufacturerUUID}
-                >
-                  Edit
-                </Button>
-              </CardFooter>
-            </Card>
-          );
-        })}
+      <div className="overflow-x-auto rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Batch</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Facility</TableHead>
+              <TableHead>Quantity</TableHead>
+              <TableHead>Production window</TableHead>
+              <TableHead>Expiry</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {batches.map((batch) => {
+              const product = batch.productId ? productLookup.get(batch.productId) : null;
+              const productName =
+                batch.product?.name ??
+                batch.product?.productName ??
+                product?.productName ??
+                product?.name ??
+                "Product";
+              const productionStart = batch.productionStart ?? batch.productionStartTime ?? batch.productionWindow;
+              const productionEnd = batch.productionEnd ?? batch.productionEndTime ?? null;
+              const productionWindow = productionStart
+                ? productionEnd
+                  ? `${formatFriendlyDateTime(productionStart)} → ${formatFriendlyDateTime(productionEnd)}`
+                  : formatFriendlyDateTime(productionStart)
+                : "Not specified";
+              return (
+                <TableRow key={batch.id}>
+                  <TableCell>{batch.batchCode || `Batch ${batch.id}`}</TableCell>
+                  <TableCell>{productName}</TableCell>
+                  <TableCell>{batch.facility || "Not specified"}</TableCell>
+                  <TableCell>{batch.quantityProduced || "Not specified"}</TableCell>
+                  <TableCell>{productionWindow}</TableCell>
+                  <TableCell>{formatFriendlyDateTime(batch.expiryDate)}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setViewingBatch(batch)}>
+                        View
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setEditingBatch(batch);
+                          setEditForm({
+                            productId:
+                              batch.product?.id ??
+                              batch.productId ??
+                              batch.product_uuid ??
+                              "",
+                            manufacturerUUID,
+                            facility: batch.facility ?? "",
+                            productionStartTime: toDateTimeInputValue(
+                              batch.productionStartTime ??
+                                batch.productionStart ??
+                                batch.productionWindow ??
+                                ""
+                            ),
+                            productionEndTime: toDateTimeInputValue(
+                              batch.productionEndTime ?? batch.productionEnd ?? ""
+                            ),
+                            quantityProduced: batch.quantityProduced
+                              ? String(batch.quantityProduced)
+                              : "",
+                            expiryDate: toDateInputValue(batch.expiryDate),
+                          });
+                        }}
+                        disabled={!manufacturerUUID}
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </div>
     );
   };
@@ -565,15 +630,23 @@ export function BatchManagement() {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <p className="text-muted-foreground">Production start</p>
-                  <p className="text-foreground">{formatDateTime(viewingBatch.productionStart ?? viewingBatch.productionStartTime ?? viewingBatch.productionWindow)}</p>
+                  <p className="text-foreground">
+                    {formatFriendlyDateTime(
+                      viewingBatch.productionStart ??
+                        viewingBatch.productionStartTime ??
+                        viewingBatch.productionWindow
+                    )}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Production end</p>
-                  <p className="text-foreground">{formatDateTime(viewingBatch.productionEnd ?? viewingBatch.productionEndTime)}</p>
+                  <p className="text-foreground">
+                    {formatFriendlyDateTime(viewingBatch.productionEnd ?? viewingBatch.productionEndTime)}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Expiry date</p>
-                  <p className="text-foreground">{formatDateTime(viewingBatch.expiryDate)}</p>
+                  <p className="text-foreground">{formatFriendlyDateTime(viewingBatch.expiryDate)}</p>
                 </div>
               </div>
             </div>

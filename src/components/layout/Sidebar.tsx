@@ -44,32 +44,38 @@ export function Sidebar({
       case "MANUFACTURER":
         return [
           { path: "/", label: "Dashboard", icon: LayoutDashboard },
-          { path: "/products", label: "Products", icon: Package },
-          { path: "/products/create", label: "Manage Products", icon: PlusCircle },
+          // { path: "/products", label: "Products", icon: Package },
+          {
+            path: "/products/create",
+            label: "Manage Products",
+            icon: PlusCircle,
+          },
+          { path: "/qr-scan", label: "QR Scanner", icon: QrCode },
           // { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
           { path: "/handover", label: "Shipments", icon: Truck },
-          { path: "/analytics", label: "Analytics", icon: BarChart3 },
+          // { path: "/analytics", label: "Analytics", icon: BarChart3 },
           { path: "/settings", label: "Settings", icon: Settings },
-          { path: "/register", label: "Register", icon: UserPlus },
+          // { path: "/register", label: "Register", icon: UserPlus },
         ];
 
       case "SUPPLIER":
         return [
           { path: "/", label: "Dashboard", icon: LayoutDashboard },
-          { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
+          // { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
           { path: "/handover", label: "Shipments", icon: Truck },
           { path: "/settings", label: "Settings", icon: Settings },
-          { path: "/register", label: "Register", icon: UserPlus },
+          // { path: "/register", label: "Register", icon: UserPlus },
         ];
 
       case "WAREHOUSE":
         return [
-          { path: "/", label: "Dashboard", icon: LayoutDashboard },
-          { path: "/inventory", label: "Inventory", icon: Warehouse },
-          { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
-          { path: "/handover", label: "Receive / Dispatch", icon: Truck },
+          // { path: "/", label: "Dashboard", icon: LayoutDashboard },
+          // { path: "/inventory", label: "Inventory", icon: Warehouse },
+          // { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
+          // { path: "/handover", label: "Receive / Dispatch", icon: Truck },
+          { path: "/qr-scan", label: "QR Scanner", icon: QrCode },
           { path: "/settings", label: "Settings", icon: Settings },
-          { path: "/register", label: "Register", icon: UserPlus },
+          // { path: "/register", label: "Register", icon: UserPlus },
         ];
 
       case "USER":
@@ -105,7 +111,6 @@ export function Sidebar({
         collapsed ? "w-20" : "w-64",
         className
       )}
-
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">

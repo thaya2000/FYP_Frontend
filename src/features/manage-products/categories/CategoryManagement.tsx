@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { productCategoryService } from "@/services/productCategoryService";
 import type { ProductCategory } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +23,22 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+};
+
+const formatDetailedDateTime = (value?: string) => {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const datePart = date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${datePart} · ${timePart}`;
 };
 
 export function CategoryManagement() {
@@ -114,26 +129,34 @@ export function CategoryManagement() {
     updateMutation.mutate({ id: editingCategory.id, data: editForm });
   };
 
-  const cardContent = useMemo(() => {
+  const tableContent = useMemo(() => {
     if (isLoading) {
       return (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Card key={`skeleton-${index}`} className="border-border/50">
-              <CardHeader>
-                <Skeleton className="h-5 w-1/2" />
-                <Skeleton className="h-4 w-1/3" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </CardContent>
-              <CardFooter className="justify-end gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </CardFooter>
-            </Card>
-          ))}
+        <div className="overflow-x-auto rounded-lg border border-border/60">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <TableRow key={`category-skeleton-${index}`}>
+                  <TableCell>
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="mt-2 h-4 w-64" />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Skeleton className="h-8 w-16" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       );
     }
@@ -155,45 +178,46 @@ export function CategoryManagement() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {categories.map((category) => (
-          <Card key={category.id} className="border-border/60 shadow-none">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>{category.name}</span>
-                <Badge variant="outline">Category</Badge>
-              </CardTitle>
-              {category.description ? (
-                <CardDescription>{category.description}</CardDescription>
-              ) : null}
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>
-                <span className="font-medium text-foreground">Created:</span> {formatDateTime(category.createdAt)}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Updated:</span> {formatDateTime(category.updatedAt)}
-              </p>
-            </CardContent>
-            <CardFooter className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setViewingCategory(category)}>
-                View
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setEditingCategory(category);
-                  setEditForm({
-                    name: category.name ?? "",
-                  });
-                }}
-              >
-                Edit
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
+      <div className="overflow-x-auto rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Category</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {categories.map((category) => (
+              <TableRow key={category.id}>
+                <TableCell>
+                  <div className="font-medium text-foreground">{category.name}</div>
+                  {category.description ? (
+                    <p className="text-sm text-muted-foreground">{category.description}</p>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setViewingCategory(category)}>
+                      View
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setEditingCategory(category);
+                        setEditForm({
+                          name: category.name ?? "",
+                        });
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     );
   }, [categories, error, isError, isLoading]);
@@ -203,9 +227,6 @@ export function CategoryManagement() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Product Categories</h2>
-          <p className="text-sm text-muted-foreground">
-            Organize your products into clear groups for easier filtering and reporting.
-          </p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
           <PlusCircle className="h-4 w-4" />
@@ -213,7 +234,7 @@ export function CategoryManagement() {
         </Button>
       </header>
 
-      {cardContent}
+      {tableContent}
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -251,7 +272,6 @@ export function CategoryManagement() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Category</DialogTitle>
-            <DialogDescription>Update the category name to keep your catalog organised.</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleEditSubmit}>
             <div className="space-y-2">
@@ -285,14 +305,25 @@ export function CategoryManagement() {
             <DialogDescription>Category details</DialogDescription>
           </DialogHeader>
           {viewingCategory ? (
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">Created</p>
-                <p className="text-foreground">{formatDateTime(viewingCategory.createdAt)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Updated</p>
-                <p className="text-foreground">{formatDateTime(viewingCategory.updatedAt)}</p>
+            <div className="space-y-4">
+              {viewingCategory.description ? (
+                <div className="rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                  {viewingCategory.description}
+                </div>
+              ) : null}
+              <div className="grid gap-3 text-sm">
+                {[
+                  { label: "Created", value: formatDetailedDateTime(viewingCategory.createdAt) },
+                  { label: "Updated", value: formatDetailedDateTime(viewingCategory.updatedAt) },
+                ].map((detail) => (
+                  <div
+                    key={detail.label}
+                    className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-4 py-3"
+                  >
+                    <span className="text-muted-foreground">{detail.label}</span>
+                    <span className="font-medium text-foreground">{detail.value}</span>
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}
