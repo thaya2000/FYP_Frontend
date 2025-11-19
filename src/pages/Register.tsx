@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { City, Country, State } from "country-state-city";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 type SearchableSelectOption = {
   label: string;
@@ -417,16 +418,7 @@ export default function Register() {
 
       console.log("Registration payload:", payload);
 
-      const response = await axios.post(
-        "http://localhost:5000/api/registrations",
-        payload,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const response = await api.post("/api/registrations", payload);
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Registration successful!");

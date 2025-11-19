@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useConnect, useSignMessage, useDisconnect } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
+import { useWeb3Modal } from "@web3modal/wagmi/react";
+import { getAccount } from "@wagmi/core";
+import { wagmiConfig } from "@/lib/web3/wagmi";
 import {
   Loader2,
   Shield,
@@ -41,35 +44,140 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("Connect your wallet to continue");
   const [step, setStep] = useState<LoginStep>("idle");
+  const [walletConnecting, setWalletConnecting] = useState(false);
 
   const navigate = useNavigate();
-  const { connectAsync, connectors } = useConnect();
   const { signMessageAsync } = useSignMessage();
-  const { disconnect } = useDisconnect();
+  const { address: connectedAddress, isConnected } = useAccount();
+  const { open } = useWeb3Modal();
 
   const setAuth = useAppStore((s) => s.setAuth);
   const setWalletConnection = useAppStore((s) => s.setWalletConnection);
+
+  useEffect(() => {
+    if (connectedAddress) {
+      setWalletConnection(connectedAddress as `0x${string}`);
+    } else {
+      setWalletConnection(null);
+    }
+  }, [connectedAddress, setWalletConnection]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    if (["verifying", "signing", "success", "connecting", "error"].includes(step)) {
+      return;
+    }
+    if (connectedAddress) {
+      setStatus("Wallet connected. Continue with your wallet to sign in.");
+    } else if (!walletConnecting) {
+      setStatus("Connect your wallet to continue");
+    }
+  }, [connectedAddress, loading, step, walletConnecting]);
+
+  const ensureWalletConnection = async (): Promise<`0x${string}`> => {
+    let account = getAccount(wagmiConfig);
+    if (account.address) {
+      return account.address as `0x${string}`;
+    }
+
+    await open({ view: "Connect" });
+
+    account = getAccount(wagmiConfig);
+    if (account.address) {
+      return account.address as `0x${string}`;
+    }
+
+    throw new Error("WALLET_CONNECTION_CANCELLED");
+  };
+
+  const walletButtonLabel = connectedAddress
+    ? `Wallet: ${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
+    : "Connect Wallet";
+
+  const handleWalletButtonClick = async () => {
+    if (connectedAddress) {
+      await open({ view: "Account" });
+      return;
+    }
+
+    try {
+      setWalletConnecting(true);
+      setStep("connecting");
+      setStatus("Opening wallet modal...");
+      await ensureWalletConnection();
+      setStep("idle");
+      setStatus("Wallet connected. Continue with your wallet to sign in.");
+    } catch (err) {
+      handleWalletError(err, { markStepError: false });
+    } finally {
+      setWalletConnecting(false);
+    }
+  };
+
+  const describeWalletError = (err: unknown) => {
+    const errorMessage =
+      err && typeof err === "object" && "message" in err
+        ? String(err.message)
+        : "";
+    const errorCode =
+      typeof err === "object" && err && "code" in err
+        ? Number((err as { code?: number }).code)
+        : undefined;
+
+    if (errorMessage === "WALLET_CONNECTION_CANCELLED") {
+      return "Wallet connection was closed. Re-open the Connect Wallet modal and approve the request.";
+    }
+    if (errorCode === -32002) {
+      return "Your wallet already has a pending request. Open the wallet app, finish that prompt, then retry.";
+    }
+    if (
+      errorMessage.toLowerCase().includes("user rejected") ||
+      errorMessage.toLowerCase().includes("user denied")
+    ) {
+      return "❌ Signature cancelled. Please try again when ready.";
+    }
+    if (
+      errorMessage.toLowerCase().includes("network") ||
+      errorMessage.toLowerCase().includes("rpc")
+    ) {
+      return "❌ Network error. Make sure Ganache is reachable and that you've selected the correct chain (Chain ID 1337).";
+    }
+    if (errorMessage) {
+      return `❌ Connection failed: ${errorMessage}`;
+    }
+    return "❌ Connection failed. Please try again.";
+  };
+
+  const handleWalletError = (
+    err: unknown,
+    { markStepError = true }: { markStepError?: boolean } = {}
+  ) => {
+    console.error("Wallet error:", err);
+    setStatus(describeWalletError(err));
+    if (markStepError) {
+      setStep("error");
+    }
+  };
 
   const handleLogin = async () => {
     try {
       setLoading(true);
       setStep("connecting");
-      setStatus("Connecting to MetaMask...");
+      setStatus("Connecting wallet via Web3Modal...");
+      setWalletConnecting(true);
 
-      // ✅ Step 1: Connect wallet
-      const connector =
-        connectors.find((c) => c.id === "injected") ?? connectors[0];
-      const { accounts } = await connectAsync({ connector });
-      const address = accounts[0] as `0x${string}`;
+      const address = await ensureWalletConnection();
       setWalletConnection(address);
 
       // ✅ Step 2: Request nonce from backend
       setStatus("Requesting authentication challenge...");
       const { data } = await api.get("/auth/nonce", { params: { address } });
 
-      // ✅ Step 3: Ask MetaMask to sign message
+      // ✅ Step 3: Ask the connected wallet to sign message
       setStep("signing");
-      setStatus("Please sign the message in MetaMask...");
+      setStatus("Please sign the message in your wallet...");
 
       const message = `Registry Login\nAddress: ${address.toLowerCase()}\nNonce: ${
         data.nonce
@@ -99,11 +207,9 @@ export default function LoginPage() {
       setStatus("✅ Login successful! Redirecting...");
       setTimeout(() => navigate("/"), 1000);
     } catch (err: unknown) {
-      console.error("Login error:", err);
-      setStep("error");
-      setStatus("❌ Connection failed. Please try again.");
-      disconnect();
+      handleWalletError(err);
     } finally {
+      setWalletConnecting(false);
       setLoading(false);
     }
   };
@@ -183,7 +289,7 @@ export default function LoginPage() {
 
             <CardContent className="relative px-3 md:px-4">
               <div className="flex flex-col items-center justify-center space-y-3 md:space-y-4 py-2 md:py-3">
-                {/* MetaMask Icon with enhanced glow effect */}
+                {/* Wallet Icon with enhanced glow effect */}
                 <div className="relative group/fox">
                   <div
                     className={`absolute -inset-3 bg-gradient-to-r from-orange-500/40 via-orange-400/40 to-orange-600/40 rounded-full blur-2xl ${
@@ -195,7 +301,7 @@ export default function LoginPage() {
                   <div className="relative p-3 md:p-4 rounded-2xl bg-gradient-to-br from-orange-500/[0.12] to-orange-600/[0.12] border border-orange-500/30 backdrop-blur-sm shadow-lg shadow-orange-500/20 group-hover/fox:border-orange-500/40 group-hover/fox:shadow-orange-500/30 transition-all duration-300">
                     <img
                       src={metamaskFox}
-                      alt="MetaMask"
+                      alt="Fox wallet icon"
                       className={`relative w-16 h-16 md:w-20 md:h-20 ${
                         loading ? "animate-bounce" : "animate-float"
                       } drop-shadow-2xl`}
@@ -208,7 +314,8 @@ export default function LoginPage() {
                   <Alert className="bg-blue-500/10 border-blue-500/30 text-blue-200 animate-fade-in py-2">
                     <FileSignature className="h-3 w-3 md:h-3.5 md:w-3.5 text-blue-400" />
                     <AlertDescription className="text-[9px] md:text-[10px]">
-                      <strong>Sign the message in MetaMask popup</strong> This
+                      <strong>Sign the message in your wallet popup.</strong>{" "}
+                      This
                       is free and won't trigger any transaction.
                     </AlertDescription>
                   </Alert>
@@ -334,6 +441,35 @@ export default function LoginPage() {
 
             <CardFooter className="relative flex flex-col gap-1.5 md:gap-2 px-3 md:px-4 pb-3 md:pb-4">
               <Button
+                type="button"
+                variant="outline"
+                disabled={loading || walletConnecting}
+                onClick={handleWalletButtonClick}
+                className="w-full font-semibold text-[10px] md:text-xs py-3 md:py-3.5 border-white/20 text-white bg-white/[0.02] hover:bg-white/[0.1] hover:border-white/40 transition-all duration-300 flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  {walletConnecting ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-orange-300" />
+                  ) : (
+                    <Wallet className="w-4 h-4 text-orange-300" />
+                  )}
+                  <span>
+                    {walletConnecting ? "Connecting..." : walletButtonLabel}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[9px] text-gray-300">
+                  <Network className="w-3 h-3" />
+                  <span>
+                    {walletConnecting
+                      ? "Check wallet"
+                      : isConnected
+                      ? "Ready"
+                      : "Tap to connect"}
+                  </span>
+                </div>
+              </Button>
+
+              <Button
                 disabled={loading}
                 onClick={handleLogin}
                 size="lg"
@@ -353,7 +489,7 @@ export default function LoginPage() {
                       alt=""
                       className="w-4 h-4 md:w-5 md:h-5 group-hover/btn:scale-110 transition-transform duration-300"
                     />
-                    <span>Connect with MetaMask</span>
+                    <span>Continue with your wallet</span>
                   </div>
                 )}
               </Button>
@@ -367,18 +503,24 @@ export default function LoginPage() {
                     </div>
                     <AlertDescription className="text-[9px] md:text-[10px] leading-relaxed">
                       <strong className="text-white font-semibold block mb-0.5">
-                        First time here?
+                        📱 Using Mobile?
                       </strong>
                       <span className="text-gray-300">
-                        Install{" "}
+                        Use{" "}
                         <span className="text-orange-400 font-medium">
-                          MetaMask
+                          Connect Wallet
                         </span>{" "}
-                        extension and connect to{" "}
+                        above to launch MetaMask, WalletConnect, or any supported
+                        wallet. On mobile browsers it deep-links into the
+                        MetaMask app automatically. Make sure the{" "}
                         <span className="text-emerald-400 font-medium">
-                          Ganesh Testnet
-                        </span>
-                        .
+                          Ganache network
+                        </span>{" "}
+                        (Chain ID: 1337, RPC:{" "}
+                        {typeof window !== "undefined"
+                          ? `${window.location.protocol}//${window.location.hostname}:7545`
+                          : "http://your-ip:7545"}
+                        ) is added in your wallet before signing.
                       </span>
                     </AlertDescription>
                   </div>
