@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -41,7 +41,7 @@ const formatDetailedDateTime = (value?: string) => {
     hour: "numeric",
     minute: "2-digit",
   });
-  return `${datePart} · ${timePart}`;
+  return `${datePart} - ${timePart}`;
 };
 
 export function ProductManagement() {
@@ -49,6 +49,7 @@ export function ProductManagement() {
   const { toast } = useToast();
 
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [productSearch, setProductSearch] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateProductRequest>(emptyProductForm);
 
@@ -127,6 +128,27 @@ export function ProductManagement() {
     return new Map(categories.map((category) => [category.id, category.name]));
   }, [categories]);
 
+  const visibleProducts = useMemo(() => {
+    const term = productSearch.trim().toLowerCase();
+    if (!term) return products;
+    return products.filter((product) => {
+      const categoryName =
+        product.productCategory?.name ??
+        categoryLookup.get(product.productCategoryId ?? "") ??
+        "";
+      const fields = [
+        product.productName,
+        product.name,
+        categoryName,
+        product.requiredStartTemp,
+        product.requiredEndTemp,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      return fields.some((value) => value.includes(term));
+    });
+  }, [products, productSearch, categoryLookup]);
+
   const handleCreateSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createForm.productName.trim() || !createForm.productCategoryId) {
@@ -155,31 +177,38 @@ export function ProductManagement() {
   };
 
   const renderProducts = () => {
-    if (loadingProducts) {
-      return (
-        <div className="overflow-x-auto rounded-lg border border-border/60">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Product</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Temperature</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 6 }).map((_, index) => (
-              <TableRow key={`product-skeleton-${index}`}>
-                <TableCell>
-                  <Skeleton className="h-5 w-40" />
-                    <Skeleton className="mt-2 h-4 w-64" />
+  const hasFilter = Boolean(productSearch.trim());
+
+  if (loadingProducts) {
+    return (
+      <div className="rounded-lg border border-border/60">
+        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+          <Table className="min-w-full">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Temperature range</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <TableRow key={`product-skeleton-${index}`}>
+                  <TableCell>
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="mt-2 h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-24" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
                   </TableCell>
                   <TableCell>
                     <Skeleton className="h-4 w-32" />
                   </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-28" />
-                </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Skeleton className="h-8 w-16" />
@@ -191,54 +220,70 @@ export function ProductManagement() {
             </TableBody>
           </Table>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    if (isError) {
-      return (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {(error as Error)?.message ?? "Unable to load products right now."}
-        </div>
-      );
-    }
-
-    if (products.length === 0) {
-      return (
-        <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
-          No products found for this view.
-        </div>
-      );
-    }
-
+  if (isError) {
     return (
-      <div className="overflow-x-auto rounded-lg border border-border/60">
-        <Table>
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        {(error as Error)?.message ?? "Unable to load products right now."}
+      </div>
+    );
+  }
+
+  if (!products.length && !hasFilter) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        No products found. Use the Create Product button to add one.
+      </div>
+    );
+  }
+
+  if (!visibleProducts.length) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        No products match your current filter.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border/60">
+      <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+        <Table className="min-w-full">
           <TableHeader>
             <TableRow>
               <TableHead>Product</TableHead>
               <TableHead>Category</TableHead>
-              <TableHead>Temperature</TableHead>
+              <TableHead>Temperature range</TableHead>
+              <TableHead>Updated</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.map((product) => {
-              const categoryName =
-                product.productCategory?.name ||
-                categoryLookup.get(product.productCategoryId) ||
+            {visibleProducts.map((product) => {
+              const categoryLabel =
+                product.productCategory?.name ??
+                categoryLookup.get(product.productCategoryId) ??
                 "Uncategorised";
-              const temperature =
+              const tempLabel =
                 product.requiredStartTemp && product.requiredEndTemp
                   ? `${product.requiredStartTemp} - ${product.requiredEndTemp}`
                   : "Not specified";
-
               return (
                 <TableRow key={product.id}>
                   <TableCell>
-                    <div className="font-medium text-foreground">{product.productName}</div>
+                    <div className="font-medium text-foreground">
+                      {product.productName}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {product.handlingInstructions || "No handling notes"}
+                    </p>
                   </TableCell>
-                  <TableCell>{categoryName}</TableCell>
-                  <TableCell>{temperature}</TableCell>
+                  <TableCell>{categoryLabel}</TableCell>
+                  <TableCell>{tempLabel}</TableCell>
+                  <TableCell>{formatDateTime(product.updatedAt)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" size="sm" onClick={() => setViewingProduct(product)}>
@@ -268,8 +313,9 @@ export function ProductManagement() {
           </TableBody>
         </Table>
       </div>
-    );
-  };
+    </div>
+  );
+};;
 
   return (
     <section className="space-y-6">
@@ -278,7 +324,18 @@ export function ProductManagement() {
           <h2 className="text-2xl font-semibold tracking-tight">Products</h2>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="sm:w-64">
+          <div className="sm:w-48">
+            <label htmlFor="product-search-filter" className="sr-only">
+              Search products
+            </label>
+            <Input
+              id="product-search-filter"
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+              placeholder="Search products..."
+            />
+          </div>
+          <div className="sm:w-52">
             <label htmlFor="product-category-filter" className="sr-only">
               Category filter
             </label>
@@ -371,7 +428,7 @@ export function ProductManagement() {
                 </label>
                 <Input
                   id="product-temp-start"
-                  placeholder="-70°C"
+                  placeholder="-70 deg C"
                   value={createForm.requiredStartTemp}
                   onChange={(event) =>
                     setCreateForm((current) => ({
@@ -390,7 +447,7 @@ export function ProductManagement() {
                 </label>
                 <Input
                   id="product-temp-end"
-                  placeholder="-60°C"
+                  placeholder="-60 deg C"
                   value={createForm.requiredEndTemp}
                   onChange={(event) =>
                     setCreateForm((current) => ({
@@ -666,6 +723,14 @@ export function ProductManagement() {
     </section>
   );
 }
+
+
+
+
+
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,7 @@ const formatDetailedDateTime = (value?: string) => {
     hour: "numeric",
     minute: "2-digit",
   });
-  return `${datePart} · ${timePart}`;
+  return `${datePart} - ${timePart}`;
 };
 
 export function CategoryManagement() {
@@ -52,6 +52,7 @@ export function CategoryManagement() {
   const [editForm, setEditForm] = useState<CategoryFormState>(emptyForm);
 
   const [viewingCategory, setViewingCategory] = useState<ProductCategory | null>(null);
+  const [categorySearch, setCategorySearch] = useState("");
 
   const {
     data: categories = [],
@@ -129,54 +130,17 @@ export function CategoryManagement() {
     updateMutation.mutate({ id: editingCategory.id, data: editForm });
   };
 
-  const tableContent = useMemo(() => {
-    if (isLoading) {
-      return (
-        <div className="overflow-x-auto rounded-lg border border-border/60">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 4 }).map((_, index) => (
-                <TableRow key={`category-skeleton-${index}`}>
-                  <TableCell>
-                    <Skeleton className="h-5 w-40" />
-                    <Skeleton className="mt-2 h-4 w-64" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Skeleton className="h-8 w-16" />
-                      <Skeleton className="h-8 w-16" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      );
-    }
+  const filteredCategories = useMemo(() => {
+  const term = categorySearch.trim().toLowerCase();
+  if (!term) return categories;
+  return categories.filter((category) =>
+    (category.name ?? "").toLowerCase().includes(term),
+  );
+}, [categories, categorySearch]);
 
-    if (isError) {
-      return (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {(error as Error)?.message ?? "Unable to load categories right now."}
-        </div>
-      );
-    }
-
-    if (categories.length === 0) {
-      return (
-        <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
-          No categories found. Use the Create Category button to add your first category.
-        </div>
-      );
-    }
-
+const tableContent = useMemo(() => {
+  const hasFilter = Boolean(categorySearch.trim());
+  if (isLoading) {
     return (
       <div className="overflow-x-auto rounded-lg border border-border/60">
         <Table>
@@ -187,7 +151,61 @@ export function CategoryManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {categories.map((category) => (
+            {Array.from({ length: 6 }).map((_, index) => (
+              <TableRow key={`category-skeleton-${index}`}>
+                <TableCell>
+                  <Skeleton className="h-5 w-48" />
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Skeleton className="h-8 w-16" />
+                    <Skeleton className="h-8 w-16" />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        {(error as Error)?.message ?? "Unable to load categories right now."}
+      </div>
+    );
+  }
+
+  if (!categories.length && !hasFilter) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        You have no categories yet. Create one to get started.
+      </div>
+    );
+  }
+
+  if (!filteredCategories.length) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        No categories match your current filter.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border/60">
+      <div className="max-h-[60vh] overflow-y-auto">
+        <Table className="min-w-full">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Category</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredCategories.map((category) => (
               <TableRow key={category.id}>
                 <TableCell>
                   <div className="font-medium text-foreground">{category.name}</div>
@@ -219,19 +237,33 @@ export function CategoryManagement() {
           </TableBody>
         </Table>
       </div>
-    );
-  }, [categories, error, isError, isLoading]);
+    </div>
+  );
+}, [categories, categorySearch, error, filteredCategories, isError, isLoading]);
 
   return (
     <section className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Product Categories</h2>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
-          <PlusCircle className="h-4 w-4" />
-          Create Category
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 lg:justify-end">
+          <div className="sm:w-64">
+            <label htmlFor="category-filter" className="sr-only">
+              Search categories
+            </label>
+            <Input
+              id="category-filter"
+              value={categorySearch}
+              onChange={(event) => setCategorySearch(event.target.value)}
+              placeholder="Search categories..."
+            />
+          </div>
+          <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
+            <PlusCircle className="h-4 w-4" />
+            Create Category
+          </Button>
+        </div>
       </header>
 
       {tableContent}
@@ -332,3 +364,8 @@ export function CategoryManagement() {
     </section>
   );
 }
+
+
+
+
+

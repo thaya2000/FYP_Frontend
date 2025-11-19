@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +64,7 @@ import type { ProductBatchSummary } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { QRCodeGenerator } from "@/components/qr/QRCodeGenerator";
 
 type PackageFormState = {
   batchId: string;
@@ -120,6 +121,15 @@ const formatHash = (value?: string | null) => {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 };
 
+const getMockQrPayload = (pkg: PackageResponse) => {
+  const packageToken = pkg.packageCode ?? `ID-${pkg.id}`;
+  const batchToken =
+    pkg.batch?.batchCode ?? (pkg.batchId ? `BATCH-${pkg.batchId}` : "BATCH-N/A");
+  const sensorToken = sensorsToLabel(pkg.sensorTypes).replace(/\s+/g, "_");
+  const macToken = pkg.microprocessorMac ?? "MAC-UNKNOWN";
+  return `PKG|${packageToken}|${batchToken}|${sensorToken}|${macToken}`;
+};
+
 const productionTimeFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -137,33 +147,35 @@ const toProductionLabel = (value?: string | null) => {
 
 const deriveBatchProductionWindow = (batch: ProductBatchSummary) => {
   const start = toProductionLabel(
-    batch.productionStartTime ?? batch.productionStart
+    batch.productionStartTime ?? batch.productionStart,
   );
   const end = toProductionLabel(batch.productionEndTime ?? batch.productionEnd);
 
   let detail: string | undefined;
   if (start && end) {
-    detail = `${start} – ${end}`;
+    detail = `${start} - ${end}`;
   } else if (start) {
     detail = start;
   } else if (end) {
     detail = end;
-  } else {
-    detail =
-      typeof batch.productionWindow === "string" &&
-      batch.productionWindow.trim().length > 0
-        ? batch.productionWindow.trim()
-        : batch.batchCode ?? undefined;
+  } else if (
+    typeof batch.productionWindow === "string" &&
+    batch.productionWindow.trim().length > 0
+  ) {
+    detail = batch.productionWindow.trim();
   }
 
-  const fallback = `Batch ${batch.id ?? ""}`.trim();
-  const baseLabel = detail ?? fallback;
+  const productName =
+    batch.product?.name ??
+    batch.product?.productName ??
+    batch.productName ??
+    "Unnamed product";
+  const batchLabel =
+    batch.batchCode ??
+    batch.batchNumber ??
+    (batch.id ? `Batch ${batch.id}` : "Unnamed batch");
 
-  if (baseLabel.toLowerCase().startsWith("batch")) {
-    return baseLabel;
-  }
-
-  return `Batch - ${baseLabel}`;
+  return detail ? `${productName} - ${detail}` : `${productName} - ${batchLabel}`;
 };
 
 type SensorTypeSelectorProps = {
@@ -223,8 +235,8 @@ function SensorTypeSelector({
                 {loading
                   ? "Loading sensor types..."
                   : error
-                  ? "Failed to load sensor types"
-                  : "No sensor types found"}
+                    ? "Failed to load sensor types"
+                    : "No sensor types found"}
               </CommandEmpty>
               <CommandGroup>
                 {options.map((option) => {
@@ -318,6 +330,7 @@ export function PackageManagement() {
     "create" | "edit"
   >("create");
   const [newSensorTypeName, setNewSensorTypeName] = useState("");
+  const [packageFilter, setPackageFilter] = useState("");
 
   const {
     data: packages = [],
@@ -389,19 +402,47 @@ export function PackageManagement() {
     },
   });
 
+  const batchLookup = useMemo(
+    () => new Map(batches.map((batch) => [String(batch.id), batch])),
+    [batches],
+  );
+
   const batchOptions = useMemo(
     () =>
       batches.map((batch) => ({
         value: String(batch.id),
         label: deriveBatchProductionWindow(batch),
       })),
-    [batches]
+    [batches],
   );
 
-  const batchLookup = useMemo(
-    () => new Map(batches.map((batch) => [String(batch.id), batch])),
-    [batches]
-  );
+  const filteredPackages = useMemo(() => {
+    const term = packageFilter.trim().toLowerCase();
+    if (!term) return packages;
+
+    return packages.filter((pkg) => {
+      const batchReference =
+        pkg.batch ??
+        (pkg.batchId ? batchLookup.get(String(pkg.batchId)) ?? null : null);
+      const productLabel =
+        batchReference?.product?.name ??
+        batchReference?.product?.productName ??
+        "Product not linked";
+
+      const haystack = [
+        pkg.packageCode,
+        pkg.id,
+        pkg.status,
+        pkg.microprocessorMac,
+        productLabel,
+        batchReference?.batchCode,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+
+      return haystack.some((value) => value.includes(term));
+    });
+  }, [packages, packageFilter, batchLookup]);
   const editSensorSelections = normalizeSensorArray(editForm.sensorTypes);
   const sensorTypeErrorMessage =
     sensorTypesErrorDetails instanceof Error
@@ -509,58 +550,57 @@ export function PackageManagement() {
   };
 
   const renderPackages = () => {
-    if (!manufacturerUUID) {
-      return (
-        <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
-          Sign in as a manufacturer to view packages registered for your
-          organisation.
-        </div>
-      );
-    }
+    const hasFilter = Boolean(packageFilter.trim());
 
     if (loadingPackages) {
       return (
-        <div className="overflow-x-auto rounded-lg border border-border/60">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Package</TableHead>
-                <TableHead>Batch</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Sensors</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 6 }).map((_, index) => (
-                <TableRow key={`package-skeleton-${index}`}>
-                  <TableCell>
-                    <Skeleton className="h-5 w-40" />
-                    <Skeleton className="mt-2 h-4 w-32" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-20" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-12" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-24" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-36" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Skeleton className="h-8 w-16" />
-                      <Skeleton className="h-8 w-16" />
-                    </div>
-                  </TableCell>
+        <div className="rounded-lg border border-border/60">
+          <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+            <Table className="min-w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Package</TableHead>
+                  <TableHead>Batch</TableHead>
+                  <TableHead>Quantity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Sensors</TableHead>
+                  <TableHead>QR</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <TableRow key={`package-skeleton-${index}`}>
+                    <TableCell>
+                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="mt-2 h-4 w-32" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-12" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-36" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-8 w-16" />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-16" />
+                        <Skeleton className="h-8 w-16" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       );
     }
@@ -574,7 +614,7 @@ export function PackageManagement() {
       );
     }
 
-    if (!packages.length) {
+    if (!packages.length && !hasFilter) {
       return (
         <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
           No packages registered yet. Use the Create Package button to add one.
@@ -582,90 +622,120 @@ export function PackageManagement() {
       );
     }
 
+    if (!filteredPackages.length) {
+      return (
+        <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+          No packages match your current filter.
+        </div>
+      );
+    }
+
     return (
-      <div className="overflow-x-auto rounded-lg border border-border/60">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Package</TableHead>
-              {/* <TableHead>Batch</TableHead> */}
-              <TableHead>Quantity</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Sensors</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {packages.map((pkg) => {
-              const batchReference =
-                pkg.batch ??
-                (pkg.batchId
-                  ? batchLookup.get(String(pkg.batchId)) ?? null
-                  : null);
-              const batchLabel =
-                batchReference?.batchCode ??
-                (pkg.batchId ? `Batch ${pkg.batchId}` : "No batch linked");
-              const productLabel =
-                batchReference?.product?.name ??
-                batchReference?.product?.productName ??
-                "Product not linked";
-              return (
-                <TableRow key={pkg.id}>
-                  <TableCell>
-                    <div className="font-medium text-foreground">
-                      {pkg.packageCode || `Package ${pkg.id}`}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Product: {productLabel}
-                    </p>
-                  </TableCell>
-                  {/* <TableCell>{batchLabel}</TableCell> */}
-                  <TableCell>
-                    <div>
-                      <span className="text-foreground"></span>{" "}
-                      {pkg.quantity ?? "N/A"}
-                    </div>
-                  </TableCell>
-                  <TableCell>{pkg.status ?? "Not specified"}</TableCell>
-                  <TableCell>{sensorsToLabel(pkg.sensorTypes)}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setViewingPackage(pkg)}
-                      >
-                        View
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setEditingPackage(pkg);
-                          setEditForm({
-                            packageCode: pkg.packageCode ?? "",
-                            status: pkg.status,
-                            notes: pkg.notes,
-                            sensorTypes: normalizeSensorArray(pkg.sensorTypes),
-                          });
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+      <div className="rounded-lg border border-border/60">
+        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+          <Table className="min-w-full">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Package</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Sensors</TableHead>
+                <TableHead>QR</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredPackages.map((pkg) => {
+                const batchReference =
+                  pkg.batch ??
+                  (pkg.batchId
+                    ? batchLookup.get(String(pkg.batchId)) ?? null
+                    : null);
+                const batchLabel =
+                  batchReference?.batchCode ??
+                  (pkg.batchId ? `Batch ${pkg.batchId}` : "No batch linked");
+                const productLabel =
+                  batchReference?.product?.name ??
+                  batchReference?.product?.productName ??
+                  "Product not linked";
+                const qrPayload = getMockQrPayload(pkg);
+                return (
+                  <TableRow key={pkg.id}>
+                    <TableCell>
+                      <div className="font-medium text-foreground">
+                        {pkg.packageCode || `Package ${pkg.id}`}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Product: {productLabel} - {batchLabel}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-foreground">{pkg.quantity ?? "N/A"}</div>
+                    </TableCell>
+                    <TableCell>{pkg.status ?? "Not specified"}</TableCell>
+                    <TableCell>{sensorsToLabel(pkg.sensorTypes)}</TableCell>
+                    <TableCell>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            View QR
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 space-y-3" align="center">
+                          <div className="text-center space-y-2">
+                            <p className="text-sm font-medium">Package QR</p>
+                            {/* <p className="text-xs text-muted-foreground">
+                            Mock encrypted payload
+                          </p> */}
+                          </div>
+                          <div className="flex justify-center">
+                            <QRCodeGenerator data={qrPayload} title="Package QR" size={160} />
+                          </div>
+                          <div className="rounded-md border bg-muted/40 p-2 text-[11px] font-mono break-all">
+                            {qrPayload}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setViewingPackage(pkg)}
+                        >
+                          View
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setEditingPackage(pkg);
+                            setEditForm({
+                              packageCode: pkg.packageCode ?? "",
+                              status: pkg.status,
+                              notes: pkg.notes,
+                              sensorTypes: normalizeSensorArray(pkg.sensorTypes),
+                            });
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     );
-  };
+  };;
 
   return (
     <section className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Packages</h2>
           {/* <p className="text-sm text-muted-foreground">
@@ -673,16 +743,29 @@ export function PackageManagement() {
             up to date.
           </p> */}
         </div>
-        <Button
-          onClick={() => setIsCreateDialogOpen(true)}
-          className="gap-2"
-          disabled={
-            !manufacturerUUID || loadingBatches || Boolean(batchesError)
-          }
-        >
-          <PlusCircle className="h-4 w-4" />
-          Create Package
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 lg:justify-end">
+          <div className="sm:w-64">
+            <label htmlFor="package-filter" className="sr-only">
+              Search packages
+            </label>
+            <Input
+              id="package-filter"
+              value={packageFilter}
+              onChange={(event) => setPackageFilter(event.target.value)}
+              placeholder="Search packages..."
+            />
+          </div>
+          <Button
+            onClick={() => setIsCreateDialogOpen(true)}
+            className="gap-2"
+            disabled={
+              !manufacturerUUID || loadingBatches || Boolean(batchesError)
+            }
+          >
+            <PlusCircle className="h-4 w-4" />
+            Create Package
+          </Button>
+        </div>
       </header>
 
       {renderPackages()}
@@ -965,7 +1048,7 @@ export function PackageManagement() {
                   {viewingPackage.batch?.batchCode ??
                     (viewingPackage.batchId
                       ? batchLookup.get(String(viewingPackage.batchId))
-                          ?.batchCode || `Batch ${viewingPackage.batchId}`
+                        ?.batchCode || `Batch ${viewingPackage.batchId}`
                       : "Not linked")}
                 </p>
               </div>
@@ -976,10 +1059,10 @@ export function PackageManagement() {
                     viewingPackage.batch?.product?.productName ??
                     (viewingPackage.batchId
                       ? batchLookup.get(String(viewingPackage.batchId))?.product
-                          ?.productName ??
-                        batchLookup.get(String(viewingPackage.batchId))?.product
-                          ?.name ??
-                        "Not linked"
+                        ?.productName ??
+                      batchLookup.get(String(viewingPackage.batchId))?.product
+                        ?.name ??
+                      "Not linked"
                       : "Not linked")}
                 </p>
               </div>
@@ -1034,3 +1117,10 @@ export function PackageManagement() {
     </section>
   );
 }
+
+
+
+
+
+
+

@@ -87,7 +87,7 @@ const formatFriendlyDateTime = (value?: string) => {
     hour: "numeric",
     minute: "2-digit",
   });
-  return `${datePart} · ${timePart}`;
+  return `${datePart} - ${timePart}`;
 };
 
 export function BatchManagement() {
@@ -103,6 +103,7 @@ export function BatchManagement() {
   const [editForm, setEditForm] = useState<CreateBatchRequest>(emptyBatchForm(manufacturerUUID));
 
   const [viewingBatch, setViewingBatch] = useState<ProductBatchSummary | null>(null);
+  const [batchFilter, setBatchFilter] = useState("");
 
   const {
     data: batches = [],
@@ -126,6 +127,31 @@ export function BatchManagement() {
   );
 
   const productLookup = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+
+  const filteredBatches = useMemo(() => {
+    const term = batchFilter.trim().toLowerCase();
+    if (!term) return batches;
+
+    return batches.filter((batch) => {
+      const product = batch.productId ? productLookup.get(batch.productId) : null;
+      const productName =
+        batch.product?.name ??
+        batch.product?.productName ??
+        product?.productName ??
+        product?.name ??
+        "";
+      const fields = [
+        batch.batchCode,
+        batch.id,
+        productName,
+        batch.facility,
+        batch.quantityProduced,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      return fields.some((value) => value.includes(term));
+    });
+  }, [batches, batchFilter, productLookup]);
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateBatchRequest) => batchService.createBatch(payload),
@@ -218,19 +244,22 @@ export function BatchManagement() {
   };
 
   const renderBatches = () => {
-    if (loadingBatches) {
-      return (
-        <div className="overflow-x-auto rounded-lg border border-border/60">
-          <Table>
+  const hasFilter = Boolean(batchFilter.trim());
+
+  if (loadingBatches) {
+    return (
+      <div className="rounded-lg border border-border/60">
+        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+          <Table className="min-w-full">
             <TableHeader>
               <TableRow>
                 <TableHead>Batch</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Facility</TableHead>
                 <TableHead>Quantity</TableHead>
-              <TableHead>Production window</TableHead>
-              <TableHead>Expiry</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Production window</TableHead>
+                <TableHead>Expiry</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -265,28 +294,38 @@ export function BatchManagement() {
             </TableBody>
           </Table>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    if (batchesError) {
-      return (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {(batchesErrorDetails as Error)?.message ?? "Unable to load batches right now."}
-        </div>
-      );
-    }
-
-    if (!batches.length) {
-      return (
-        <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
-          No batches found. Register a batch to begin tracking production.
-        </div>
-      );
-    }
-
+  if (batchesError) {
     return (
-      <div className="overflow-x-auto rounded-lg border border-border/60">
-        <Table>
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        {(batchesErrorDetails as Error)?.message ?? "Unable to load batches right now."}
+      </div>
+    );
+  }
+
+  if (!batches.length && !hasFilter) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        No batches found. Register a batch to begin tracking production.
+      </div>
+    );
+  }
+
+  if (!filteredBatches.length) {
+    return (
+      <div className="rounded-lg border border-border/60 p-6 text-center text-sm text-muted-foreground">
+        No batches match your current filter.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border/60">
+      <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
+        <Table className="min-w-full">
           <TableHeader>
             <TableRow>
               <TableHead>Batch</TableHead>
@@ -299,7 +338,7 @@ export function BatchManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {batches.map((batch) => {
+            {filteredBatches.map((batch) => {
               const product = batch.productId ? productLookup.get(batch.productId) : null;
               const productName =
                 batch.product?.name ??
@@ -311,7 +350,7 @@ export function BatchManagement() {
               const productionEnd = batch.productionEnd ?? batch.productionEndTime ?? null;
               const productionWindow = productionStart
                 ? productionEnd
-                  ? `${formatFriendlyDateTime(productionStart)} → ${formatFriendlyDateTime(productionEnd)}`
+                  ? `${formatFriendlyDateTime(productionStart)} - ${formatFriendlyDateTime(productionEnd)}`
                   : formatFriendlyDateTime(productionStart)
                 : "Not specified";
               return (
@@ -344,10 +383,10 @@ export function BatchManagement() {
                               batch.productionStartTime ??
                                 batch.productionStart ??
                                 batch.productionWindow ??
-                                ""
+                                "",
                             ),
                             productionEndTime: toDateTimeInputValue(
-                              batch.productionEndTime ?? batch.productionEnd ?? ""
+                              batch.productionEndTime ?? batch.productionEnd ?? "",
                             ),
                             quantityProduced: batch.quantityProduced
                               ? String(batch.quantityProduced)
@@ -367,29 +406,43 @@ export function BatchManagement() {
           </TableBody>
         </Table>
       </div>
-    );
-  };
+    </div>
+  );
+};;
 
   return (
     <section className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Batches</h2>
           {/* <p className="text-sm text-muted-foreground">
             Monitor production batches and connect them to downstream packages.
           </p> */}
         </div>
-        <Button
-          onClick={() => {
-            setIsCreateDialogOpen(true);
-            setCreateForm(emptyBatchForm(manufacturerUUID));
-          }}
-          className="gap-2"
-          disabled={!manufacturerUUID}
-        >
-          <PlusCircle className="h-4 w-4" />
-          Create Batch
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 lg:justify-end">
+          <div className="sm:w-64">
+            <label htmlFor="batch-filter" className="sr-only">
+              Search batches
+            </label>
+            <Input
+              id="batch-filter"
+              value={batchFilter}
+              onChange={(event) => setBatchFilter(event.target.value)}
+              placeholder="Search batches..."
+            />
+          </div>
+          <Button
+            onClick={() => {
+              setIsCreateDialogOpen(true);
+              setCreateForm(emptyBatchForm(manufacturerUUID));
+            }}
+            className="gap-2"
+            disabled={!manufacturerUUID}
+          >
+            <PlusCircle className="h-4 w-4" />
+            Create Batch
+          </Button>
+        </div>
       </header>
 
       {renderBatches()}
@@ -656,5 +709,8 @@ export function BatchManagement() {
     </section>
   );
 }
+
+
+
 
 

@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useDisconnect } from "wagmi";
 
 export function Header() {
-  const { user, unreadAlertsCount, logout } = useAppStore();
+  const { user, unreadAlertsCount, logout, role } = useAppStore();
   const navigate = useNavigate();
   const { disconnect } = useDisconnect();
 
@@ -65,10 +65,10 @@ export function Header() {
             <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-muted/50">
               <RoleIcon className="w-4 h-4 text-primary" />
               <div className="text-sm">
-                <p className="font-medium">{user.displayName || "User"}</p>
-                <p className="text-xs text-muted-foreground capitalize">
+                <p className="font-medium">{role || "User"}</p>
+                {/* <p className="text-xs text-muted-foreground capitalize">
                   {user.role.toLowerCase().replace("_", " ")}
-                </p>
+                </p> */}
               </div>
             </div>
           )}
@@ -89,17 +89,15 @@ export function Header() {
             <Settings className="w-4 h-4" />
           </Button>
 
-          {user && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Logout
+          </Button>
         </div>
       </div>
     </header>

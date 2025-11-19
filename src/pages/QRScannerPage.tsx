@@ -1,277 +1,347 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { QRScanner } from "@/components/qr/QRScanner";
 import { QRCodeGenerator } from "@/components/qr/QRCodeGenerator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 import {
-  QrCode,
-  Scan,
-  Package,
-  Calendar,
-  Thermometer,
-  MapPin,
-} from "lucide-react";
-import { useAppStore } from "@/lib/store";
-import { toast } from "@/hooks/use-toast";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { AlertTriangle, Loader2, ScanLine, ShieldCheck } from "lucide-react";
+
+type VerificationResult = {
+  status: "valid" | "warning" | "invalid";
+  title: string;
+  message: string;
+  reference: string;
+  processedAt: string;
+  extraDetails: Array<{ label: string; value: string }>;
+};
+
+const DEMO_QR_PAYLOAD = "ENCRYPTED::SEGMENT-ALPHA-1234567890";
+
+const statusCopy: Record<
+  VerificationResult["status"],
+  { label: string; badgeVariant: "default" | "secondary" | "destructive" }
+> = {
+  valid: { label: "Verified", badgeVariant: "default" },
+  warning: { label: "Needs Attention", badgeVariant: "secondary" },
+  invalid: { label: "Rejected", badgeVariant: "destructive" },
+};
+
+const mockSubmitScan = async (
+  encryptedText: string,
+): Promise<VerificationResult> => {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const score = encryptedText.length % 3;
+  if (score === 0) {
+    return {
+      status: "valid",
+      title: "Shipment Verified",
+      message:
+        "The QR payload matched a valid shipment segment. You can continue the process.",
+      reference: `SEG-${encryptedText.slice(0, 6).toUpperCase()}`,
+      processedAt: new Date().toISOString(),
+      extraDetails: [
+        { label: "Segment Status", value: "IN_TRANSIT" },
+        { label: "Temperature Lock", value: "Active" },
+      ],
+    };
+  }
+  if (score === 1) {
+    return {
+      status: "warning",
+      title: "Verification Warning",
+      message:
+        "The payload is valid but requires manual confirmation due to unusual routing.",
+      reference: `CHK-${encryptedText.slice(-6).toUpperCase()}`,
+      processedAt: new Date().toISOString(),
+      extraDetails: [
+        { label: "Flag", value: "Route deviation" },
+        { label: "Action", value: "Confirm with dispatcher" },
+      ],
+    };
+  }
+  return {
+    status: "invalid",
+    title: "Verification Failed",
+    message:
+      "The encrypted data did not match any shipment on record. Please retry or escalate.",
+    reference: `ERR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+    processedAt: new Date().toISOString(),
+    extraDetails: [
+      { label: "Reason", value: "Unknown payload signature" },
+      { label: "Suggested Next Step", value: "Re-scan QR or contact support" },
+    ],
+  };
+};
 
 export default function QRScannerPage() {
-  const [showScanner, setShowScanner] = useState(false);
-  const [scannedProductId, setScannedProductId] = useState<string | null>(null);
-  const products = useAppStore((state) => state.products);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastScannedValue, setLastScannedValue] = useState<string | null>(null);
+  const [verificationResult, setVerificationResult] =
+    useState<VerificationResult | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  const scannedProduct = scannedProductId
-    ? products.find((p) => p.id === scannedProductId)
-    : null;
+  const handleScan = useCallback(async (payload: string) => {
+    setScannerOpen(false);
+    setDialogOpen(true);
+    setIsSubmitting(true);
+    setLastScannedValue(payload);
+    setSubmissionError(null);
+    setVerificationResult(null);
+    try {
+      const response = await mockSubmitScan(payload);
+      setVerificationResult(response);
+    } catch (error) {
+      console.error("Failed to submit QR payload", error);
+      setSubmissionError("Unable to reach verification service. Please retry.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, []);
 
-  const handleScan = (data: string) => {
-    setScannedProductId(data);
-    setShowScanner(false);
-
-    const product = products.find((p) => p.id === data);
-    if (product) {
-      toast({
-        title: "Product Found",
-        description: `Scanned: ${product.name}`,
-      });
-    } else {
-      toast({
-        title: "Product Not Found",
-        description: "No product matches this QR code",
-        variant: "destructive",
-      });
+  const handleDialogChange = (open: boolean) => {
+    if (isSubmitting) return;
+    setDialogOpen(open);
+    if (!open) {
+      setVerificationResult(null);
+      setSubmissionError(null);
     }
   };
 
-  const recentScans = products.slice(0, 3);
-
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold mb-2">QR Code Management</h1>
-        <p className="text-muted-foreground">
-          Scan or generate QR codes for vaccine product tracking
-        </p>
-      </div>
+    <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-background via-background to-muted p-4 sm:p-6 lg:p-8 shadow-sm">
+      <div className="absolute inset-0 -z-10 opacity-70 blur-3xl" />
+      <div className="flex flex-col gap-8">
+        <header className="text-center space-y-2">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+            Trusted QR Validation
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
+            All-in-one QR verification hub
+          </h1>
+          <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto">
+            Scan encrypted payloads, confirm authenticity, and keep handovers moving.
+            Built for every role, optimized for the devices your teams already use.
+          </p>
+        </header>
 
-      {/* Tabs */}
-      <Tabs defaultValue="scan" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="scan">
-            <Scan className="h-4 w-4 mr-2" />
-            Scan QR Code
-          </TabsTrigger>
-          <TabsTrigger value="generate">
-            <QrCode className="h-4 w-4 mr-2" />
-            Generate QR Code
-          </TabsTrigger>
-        </TabsList>
+        <div className="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+          <Card className="border-none bg-card/80 shadow-lg shadow-primary/5 backdrop-blur">
+            <CardHeader className="space-y-1 pb-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                Step 1
+              </p>
+              <CardTitle className="text-2xl">Scan encrypted QR</CardTitle>
+              <CardDescription>
+                Works across mobile and desktop. Submit encrypted data to validate shipment
+                movement instantly.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1.5">
+                    <p className="text-sm font-medium text-foreground">Ready to scan?</p>
+                    <p className="text-xs text-muted-foreground">
+                      Tap the button and point your camera at the encrypted QR label.
+                    </p>
+                  </div>
+                  <Button
+                    size="lg"
+                    className="w-full sm:w-auto gap-2"
+                    onClick={() => setScannerOpen(true)}
+                  >
+                    <ScanLine className="h-5 w-5" />
+                    Launch scanner
+                  </Button>
+                </div>
+              </div>
+              {lastScannedValue ? (
+                <div className="rounded-2xl border border-border/70 bg-muted/40 p-4 text-sm">
+                  <p className="text-muted-foreground">Last encrypted payload:</p>
+                  <p className="font-mono break-all text-primary text-xs sm:text-sm">
+                    {lastScannedValue}
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                  No scans yet. Your encrypted payload will appear here after the first scan.
+                </div>
+              )}
 
-        {/* --- Scan Tab --- */}
-        <TabsContent value="scan" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Scan Product QR Code</CardTitle>
+              <div className="rounded-2xl border border-border/70 bg-background/90 p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    1
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Quick flow</p>
+                    <p className="text-xs text-muted-foreground">
+                      Designed so field teams can operate confidently in seconds.
+                    </p>
+                  </div>
+                </div>
+                <ol className="list-decimal pl-5 space-y-2 text-sm text-muted-foreground">
+                  <li>Point the camera at the QR label or paste the string manually.</li>
+                  <li>Keep the device steady for best recognition results.</li>
+                  <li>Wait for the verification popup to confirm the segment status.</li>
+                </ol>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-6">
+            {/* <Card className="border-none bg-card/80 shadow-lg shadow-primary/5 backdrop-blur">
+              <CardHeader className="pb-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                  Step 2
+                </p>
+                <CardTitle className="text-2xl">Demo QR for testing</CardTitle>
+                <CardDescription>
+                  Scan or copy the encrypted payload to preview the verification experience.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button
-                  onClick={() => setShowScanner(true)}
-                  className="w-full gap-2"
-                  size="lg"
-                >
-                  <Scan className="h-5 w-5" />
-                  Start Scanner
-                </Button>
-
-                {scannedProduct && (
-                  <div className="space-y-4 mt-6">
-                    <Separator />
-                    <div>
-                      <h3 className="text-lg font-semibold mb-4">
-                        Scanned Product Details
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex items-start gap-3">
-                          <Package className="h-5 w-5 mt-0.5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              Product Name
-                            </p>
-                            <p className="font-medium">{scannedProduct.name}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                          <div className="h-5 w-5 mt-0.5 text-muted-foreground flex items-center justify-center text-xs font-bold">
-                            #
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              Batch Number
-                            </p>
-                            <p className="font-medium">
-                              {scannedProduct.batchNumber}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                          <Calendar className="h-5 w-5 mt-0.5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              Expiration Date
-                            </p>
-                            <p className="font-medium">
-                              {new Date(
-                                scannedProduct.expirationDate
-                              ).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                          <Thermometer className="h-5 w-5 mt-0.5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              Storage Temperature
-                            </p>
-                            <p className="font-medium">
-                              {scannedProduct.temperatureRange.min}°
-                              {scannedProduct.temperatureRange.unit} to{" "}
-                              {scannedProduct.temperatureRange.max}°
-                              {scannedProduct.temperatureRange.unit}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                          <MapPin className="h-5 w-5 mt-0.5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              Storage Requirements
-                            </p>
-                            <p className="font-medium">
-                              {scannedProduct.storageRequirements}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-sm text-muted-foreground mb-2">
-                            Status
-                          </p>
-                          <Badge
-                            variant={
-                              scannedProduct.status === "ADMINISTERED"
-                                ? "default"
-                                : "secondary"
-                            }
-                          >
-                            {scannedProduct.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 flex flex-col items-center gap-4">
+                  <QRCodeGenerator data={DEMO_QR_PAYLOAD} title="Demo QR" size={200} />
+                  <div className="w-full rounded-xl border border-border/60 bg-background/90 p-3 font-mono text-xs sm:text-sm break-all text-center">
+                    {DEMO_QR_PAYLOAD}
                   </div>
-                )}
+                  <p className="text-xs text-muted-foreground text-center">
+                    On a single device? Paste the payload into the scanner modal to simulate a camera scan.
+                  </p>
+                </div>
               </CardContent>
-            </Card>
+            </Card> */}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Scans</CardTitle>
+            <Card className="border-none bg-card/80 shadow-lg shadow-primary/5 backdrop-blur">
+              <CardHeader className="pb-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                  Step 3
+                </p>
+                <CardTitle className="text-2xl">Recent verifications</CardTitle>
+                <CardDescription>
+                  Quick glance at the latest backend responses.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {recentScans.map((product) => (
-                  <div
-                    key={product.id}
-                    className="p-4 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                    onClick={() => setScannedProductId(product.id)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold">{product.name}</span>
-                      <Badge variant="outline">{product.status}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Batch: {product.batchNumber}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {product.manufacturer}
-                    </p>
-                  </div>
-                ))}
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
+                  Response timeline
+                </p>
+                <Separator />
+                <p>
+                  Verification details appear in a popup immediately after the payload is submitted.
+                  This works seamlessly on mobile, tablet, and desktop.
+                </p>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </div>
+      </div>
 
-        {/* --- Generate Tab --- */}
-        <TabsContent value="generate" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Select Product</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {products.map((product) => (
-                  <div
-                    key={product.id}
-                    className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                      scannedProductId === product.id
-                        ? "bg-primary/10 border-primary"
-                        : "hover:bg-accent"
-                    }`}
-                    onClick={() => setScannedProductId(product.id)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold">{product.name}</span>
-                      <Badge variant="outline">{product.vaccineType}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Batch: {product.batchNumber}
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Generated QR Code</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {scannedProductId ? (
-                  <QRCodeGenerator
-                    data={scannedProductId}
-                    title={scannedProduct?.name}
-                    size={256}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    <div className="text-center">
-                      <QrCode className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Select a product to generate QR code</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* QR Scanner Modal */}
-      {showScanner && (
+      {scannerOpen ? (
         <QRScanner
           onScan={handleScan}
-          onClose={() => setShowScanner(false)}
-          title="Scan Vaccine Product"
+          onClose={() => setScannerOpen(false)}
+          title="Scan encrypted QR"
         />
-      )}
+      ) : null}
+
+      <Dialog open={dialogOpen} onOpenChange={handleDialogChange}>
+        <DialogContent className="mx-4 sm:max-w-md rounded-2xl border border-border bg-card/95 backdrop-blur">
+          <DialogHeader>
+            <DialogTitle>Verification Response</DialogTitle>
+            <DialogDescription>
+              {isSubmitting
+                ? "Submitting encrypted payload to backend..."
+                : "Latest response from the verification endpoint."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {isSubmitting ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Waiting for backend response. This usually takes a few seconds.
+              </p>
+            </div>
+          ) : submissionError ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                <p className="font-medium">Submission failed</p>
+              </div>
+              <p className="text-sm text-destructive">{submissionError}</p>
+            </div>
+          ) : verificationResult ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-semibold">
+                    {verificationResult.title}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(verificationResult.processedAt).toLocaleString()}
+                  </p>
+                </div>
+                <Badge variant={statusCopy[verificationResult.status].badgeVariant}>
+                  {statusCopy[verificationResult.status].label}
+                </Badge>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                {verificationResult.message}
+              </p>
+
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="text-muted-foreground">Reference</p>
+                <p className="font-medium">{verificationResult.reference}</p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Additional details
+                </p>
+                <div className="grid gap-2">
+                  {verificationResult.extraDetails.map((detail) => (
+                    <div
+                      key={detail.label}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="text-muted-foreground">
+                        {detail.label}
+                      </span>
+                      <span className="font-medium">{detail.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Scan a QR code to view verification feedback.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

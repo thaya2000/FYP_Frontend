@@ -81,6 +81,8 @@ const App = () => {
                   <Route path="handover" element={<Handover />} />
                   <Route path="analytics" element={<Analytics />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="qr-scan" element={<QRScannerPage />} />
+
                 </>
               )}
 
@@ -92,6 +94,8 @@ const App = () => {
                   <Route path="handover" element={<Handover />} />
                   <Route path="products" element={<Products />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="qr-scan" element={<QRScannerPage />} />
+
                 </>
               )}
 
@@ -104,6 +108,8 @@ const App = () => {
                   <Route path="checkpoints" element={<Checkpoints />} />
                   <Route path="handover" element={<Handover />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="qr-scan" element={<QRScannerPage />} />
+
                 </>
               )}
 
@@ -113,6 +119,8 @@ const App = () => {
                   <Route index element={<QRScannerPage />} />
                   <Route path="register" element={<Register />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
+                  <Route path="qr-scan" element={<QRScannerPage />} />
+
                 </>
               )}
 

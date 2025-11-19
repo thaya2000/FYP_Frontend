@@ -149,11 +149,7 @@ const STATUS_CONFIG: Record<SupplierShipmentStatus, StatusConfig> = {
 export function SupplierSection() {
   const shared = useHandoverSharedContext();
   const supplier = useSupplierContext();
-
-  if (!supplier.enabled || shared.role !== "SUPPLIER") {
-    return null;
-  }
-
+  const canRender = supplier.enabled && shared.role === "SUPPLIER";
   const hasAreaFilter = supplier.areaQuery.trim().length > 0;
   const [takeoverDialogOpen, setTakeoverDialogOpen] = useState(false);
   const [takeoverTarget, setTakeoverTarget] = useState<SupplierShipmentRecord | null>(null);
@@ -230,6 +226,10 @@ export function SupplierSection() {
     handleDownloadProof,
     handleReportIssue,
   };
+
+  if (!canRender) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">

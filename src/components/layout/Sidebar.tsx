@@ -8,7 +8,6 @@ import {
   Settings,
   BarChart3,
   PlusCircle,
-  LogOut,
   Menu,
   X,
   Users,
@@ -34,7 +33,7 @@ export function Sidebar({
   collapsed = false,
   setCollapsed,
 }: SidebarProps) {
-  const { role, logout } = useAppStore();
+  const { role } = useAppStore();
   const userRole = role ?? "GUEST"; // ✅ fallback for null
   const location = useLocation();
   const navigate = useNavigate();
@@ -121,16 +120,6 @@ export function Sidebar({
   };
 
   const navigationItems = getNavigationItems();
-
-  const handleLogout = () => {
-    try {
-      logout();
-      localStorage.removeItem("supply-chain-store");
-      navigate("/login");
-    } catch (err) {
-      console.error("Logout failed:", err);
-    }
-  };
 
   return (
     <div
@@ -256,17 +245,6 @@ export function Sidebar({
         })}
       </div>
 
-      {/* ✅ Logout Section pinned to bottom */}
-      <div className="border-t p-3">
-        <Button
-          onClick={handleLogout}
-          variant="ghost"
-          className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive"
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          {!collapsed && "Logout"}
-        </Button>
-      </div>
     </div>
   );
 }
