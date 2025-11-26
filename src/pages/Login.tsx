@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAccount, useSignMessage, useDisconnect } from "wagmi";
-import { useWeb3Modal, useWeb3ModalState } from "@web3modal/wagmi/react";
-import { getAccount } from "@wagmi/core";
+import { useAccount, useSignMessage, useDisconnect, useConnect } from "wagmi";
 import { wagmiConfig } from "@/lib/web3/wagmi";
+import {
+  connectMetaMaskSDK,
+  getMetaMaskProvider,
+} from "@/lib/web3/metamask-sdk";
 import {
   Loader2,
   Shield,
@@ -19,6 +21,7 @@ import {
   Network,
   LogOut,
   ArrowRight,
+  Smartphone,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
@@ -50,6 +53,8 @@ export default function LoginPage() {
   const [step, setStep] = useState<LoginStep>("idle");
   const [walletConnecting, setWalletConnecting] = useState(false);
   const [nonce, setNonce] = useState<string | null>(null);
+  const [usingSdk, setUsingSdk] = useState(false);
+  const [sdkAddress, setSdkAddress] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const { signMessageAsync } = useSignMessage();
@@ -58,9 +63,35 @@ export default function LoginPage() {
     isConnected,
     status: accountStatus,
   } = useAccount();
-  const { open } = useWeb3Modal();
-  const { open: isModalOpen } = useWeb3ModalState();
+  const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
+
+  // Detect mobile browser (not MetaMask browser)
+  const isMobileBrowser = () => {
+    if (typeof window === "undefined") return false;
+    const ua = navigator.userAgent.toLowerCase();
+    const isMobile =
+      /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+    const ethereum = (window as any).ethereum;
+
+    // Check if it's truly MetaMask browser (not just injected provider)
+    const isMetaMaskBrowser =
+      ethereum?.isMetaMask &&
+      (ua.includes("metamask") || ethereum?.isMetaMaskMobile);
+
+    const shouldUseSDK = isMobile && !isMetaMaskBrowser;
+
+    console.log("[Mobile Detection]", {
+      isMobile,
+      hasEthereum: !!ethereum,
+      isMetaMask: ethereum?.isMetaMask,
+      isMetaMaskBrowser,
+      shouldUseSDK,
+      userAgent: ua,
+    });
+
+    return shouldUseSDK;
+  };
 
   const clearWalletConnectStorage = () => {
     if (typeof window === "undefined") {
@@ -144,7 +175,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (
       isConnected &&
-      !isModalOpen &&
       step !== "ready_to_sign" &&
       step !== "signing" &&
       step !== "verifying" &&
@@ -154,7 +184,7 @@ export default function LoginPage() {
       setWalletConnecting(false);
       setStatus("Wallet connected! Click 'Sign In' to verify ownership.");
     }
-  }, [isConnected, isModalOpen, step]);
+  }, [isConnected, step]);
 
   // Handle reconnecting state
   useEffect(() => {
@@ -166,16 +196,16 @@ export default function LoginPage() {
     }
   }, [accountStatus]);
 
-  // Reset state if modal is closed without connection
+  // Reset state if disconnected
   useEffect(() => {
-    if (!isModalOpen && !isConnected && accountStatus !== "reconnecting") {
-      console.log("[Login] Modal closed without connection, resetting state");
+    if (!isConnected && accountStatus !== "reconnecting") {
+      console.log("[Login] Disconnected, resetting state");
       setLoading(false);
       setWalletConnecting(false);
       setStep("idle");
       setStatus("Connect your wallet to continue");
     }
-  }, [isModalOpen, isConnected, accountStatus]);
+  }, [isConnected, accountStatus]);
 
   const [rpcError, setRpcError] = useState(false);
 
@@ -316,19 +346,29 @@ export default function LoginPage() {
 
   // Step 2: Sign Message (Must be direct user action for mobile deep links)
   const performSignature = async () => {
-    if (!connectedAddress || !nonce) return;
+    const activeAddress = connectedAddress || (sdkAddress as `0x${string}`);
+    if (!activeAddress || !nonce) return;
 
     try {
       setLoading(true);
       setStep("signing");
       setStatus("Please sign the message in your wallet...");
 
-      const message = `Registry Login\nAddress: ${connectedAddress.toLowerCase()}\nNonce: ${nonce}`;
+      const message = `Registry Login\nAddress: ${activeAddress.toLowerCase()}\nNonce: ${nonce}`;
 
-      const signature = await signMessageAsync({
-        account: connectedAddress,
-        message,
-      });
+      let signature: string;
+
+      // Use SDK for mobile browsers, wagmi for desktop
+      if (usingSdk && sdkAddress) {
+        console.log("[Login] Signing with MetaMask SDK...");
+        signature = await signWithSDK(message);
+      } else {
+        console.log("[Login] Signing with wagmi...");
+        signature = await signMessageAsync({
+          account: activeAddress,
+          message,
+        });
+      }
 
       // Send signature back to backend with retry logic
       setStep("verifying");
@@ -341,7 +381,7 @@ export default function LoginPage() {
       while (retries < maxRetries) {
         try {
           loginResponse = await api.post("/auth/login", {
-            address: connectedAddress,
+            address: activeAddress,
             signature,
           });
           break;
@@ -382,27 +422,109 @@ export default function LoginPage() {
     }
   };
 
-  const resetConnection = () => {
+  const resetConnection = async () => {
     console.log("[Login] Resetting connection state...");
     clearWalletConnectStorage();
     disconnect();
+    setUsingSdk(false);
+    setSdkAddress(null);
+
+    // Disconnect MetaMask SDK
+    try {
+      const { disconnectMetaMaskSDK } = require("@/lib/web3/metamask-sdk");
+      await disconnectMetaMaskSDK();
+    } catch (e) {
+      console.warn("[Login] SDK disconnect warning:", e);
+    }
+
     localStorage.clear();
     sessionStorage.clear();
     window.location.reload();
   };
 
+  // MetaMask SDK connection handler for mobile browsers
+  const connectWithSDK = async () => {
+    try {
+      setStep("connecting");
+      setStatus("Opening MetaMask app...");
+      setWalletConnecting(true);
+      setLoading(true);
+
+      console.log("[MetaMask SDK] Initiating connection...");
+      const accounts = await connectMetaMaskSDK();
+
+      if (accounts && accounts.length > 0) {
+        const address = accounts[0] as string;
+        console.log("[MetaMask SDK] Connected:", address);
+        setSdkAddress(address);
+        setUsingSdk(true);
+        setStatus("Wallet connected! Preparing login...");
+
+        // Auto-fetch nonce
+        await initiateLogin(address as `0x${string}`);
+      }
+    } catch (error) {
+      console.error("[MetaMask SDK] Connection failed:", error);
+      setStatus("Connection failed. Please try again.");
+      setStep("error");
+      setLoading(false);
+      setWalletConnecting(false);
+    }
+  };
+
+  // SDK signature handler
+  const signWithSDK = async (message: string) => {
+    try {
+      const provider = await getMetaMaskProvider();
+      if (!provider || !sdkAddress) {
+        throw new Error("Provider or address not available");
+      }
+
+      console.log(
+        "[MetaMask SDK] Requesting signature - will open MetaMask app..."
+      );
+
+      // Request signature through MetaMask SDK
+      // This should automatically trigger deep link to MetaMask app
+      const signature = (await provider.request({
+        method: "personal_sign",
+        params: [message, sdkAddress],
+      })) as string;
+
+      console.log("[MetaMask SDK] Signature received");
+      return signature;
+    } catch (error) {
+      console.error("[MetaMask SDK] Signature error:", error);
+      throw error;
+    }
+  };
+
   const handleMainButtonClick = async () => {
     try {
-      // 1. If not connected, connect
-      if (!isConnected || !connectedAddress) {
-        console.log("[Login] Opening wallet modal");
+      // Check if mobile browser - use SDK
+      if (isMobileBrowser() && !isConnected && !usingSdk) {
+        await connectWithSDK();
+        return;
+      }
+
+      // 1. If not connected, connect (desktop/MetaMask browser)
+      if (!isConnected && !sdkAddress) {
+        console.log("[Login] Connecting wallet via injected connector");
         setStep("connecting");
         setStatus("Opening wallet connection...");
         setWalletConnecting(true);
         setLoading(true);
-        await open({ view: "Connect" });
+
+        // Get the injected connector (MetaMask)
+        const injectedConnector = connectors.find((c) => c.id === "injected");
+        if (injectedConnector) {
+          await connect({ connector: injectedConnector });
+        }
         return;
       }
+
+      const activeAddress = connectedAddress || (sdkAddress as `0x${string}`);
+      if (!activeAddress) return;
 
       // 2. Check if we can fast-track (One-Click)
       if (nonce && step !== "ready_to_sign") {
@@ -415,9 +537,9 @@ export default function LoginPage() {
       if (
         step === "idle" ||
         step === "error" ||
-        (isConnected && step !== "ready_to_sign")
+        ((isConnected || sdkAddress) && step !== "ready_to_sign")
       ) {
-        await initiateLogin(connectedAddress);
+        await initiateLogin(activeAddress);
         return;
       }
 
@@ -519,14 +641,37 @@ export default function LoginPage() {
               </CardDescription>
 
               {/* Connected Wallet Badge */}
-              {isConnected && connectedAddress && (
+              {(isConnected && connectedAddress) || (usingSdk && sdkAddress) ? (
                 <div className="flex items-center justify-center mt-2 animate-fade-in">
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-mono">
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                    {connectedAddress.slice(0, 6)}...
-                    {connectedAddress.slice(-4)}
+                    {usingSdk && sdkAddress ? (
+                      <>
+                        <Smartphone className="w-3 h-3 text-emerald-400" />
+                        {sdkAddress.slice(0, 6)}...{sdkAddress.slice(-4)}
+                      </>
+                    ) : (
+                      <>
+                        {connectedAddress?.slice(0, 6)}...
+                        {connectedAddress?.slice(-4)}
+                      </>
+                    )}
                     <button
-                      onClick={() => disconnect()}
+                      onClick={async () => {
+                        disconnect();
+                        setSdkAddress(null);
+                        setUsingSdk(false);
+
+                        // Disconnect MetaMask SDK
+                        try {
+                          const {
+                            disconnectMetaMaskSDK,
+                          } = require("@/lib/web3/metamask-sdk");
+                          await disconnectMetaMaskSDK();
+                        } catch (e) {
+                          console.warn("[Disconnect] SDK warning:", e);
+                        }
+                      }}
                       className="ml-2 p-1 hover:bg-blue-500/20 rounded-full transition-colors"
                       title="Disconnect Wallet"
                     >
@@ -534,7 +679,7 @@ export default function LoginPage() {
                     </button>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Step indicator */}
               {loading && (

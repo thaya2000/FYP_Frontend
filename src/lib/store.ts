@@ -119,7 +119,16 @@ export const useAppStore = create<AppState>()(
         setAuthToken(token); // ✅ apply JWT to Axios instance
       },
 
-      logout: () => {
+      logout: async () => {
+        // Clear MetaMask SDK session
+        try {
+          const { disconnectMetaMaskSDK } = require("./web3/metamask-sdk");
+          await disconnectMetaMaskSDK();
+          console.log("[Store] MetaMask SDK disconnected");
+        } catch (e) {
+          console.warn("[Store] SDK disconnect warning:", e);
+        }
+
         set({
           token: undefined,
           refreshToken: undefined,
