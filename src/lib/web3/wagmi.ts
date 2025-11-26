@@ -96,7 +96,7 @@ const chains: readonly [Chain, ...Chain[]] = [ganache, mainnet];
 const metadata = {
   name: appName,
   description: appDescription,
-  url: appUrl,
+  url: typeof window !== "undefined" ? window.location.origin : appUrl,
   icons: [appIcon],
 };
 
@@ -110,6 +110,13 @@ export const wagmiConfig = createConfig({
     injected({ shimDisconnect: true }),
     coinbaseWallet({ appName: metadata.name }),
   ],
+  /**
+   * Auto-connect triggers WalletConnect handshakes as soon as the page loads.
+   * On mobile browsers this immediately spawns a "pending request" inside MetaMask,
+   * which then causes every manual attempt to be declined. We only want to start
+   * a session after the user taps the Connect button, so keep this off.
+   */
+  autoConnect: false,
 });
 
 declare global {

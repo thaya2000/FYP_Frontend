@@ -53,10 +53,64 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
   const { signMessageAsync } = useSignMessage();
-  const { address: connectedAddress, isConnected, status: accountStatus } = useAccount();
+  const {
+    address: connectedAddress,
+    isConnected,
+    status: accountStatus,
+  } = useAccount();
   const { open } = useWeb3Modal();
   const { open: isModalOpen } = useWeb3ModalState();
   const { disconnect } = useDisconnect();
+
+  const clearWalletConnectStorage = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const { localStorage, sessionStorage } = window;
+      const wcKeys = Object.keys(localStorage).filter(
+        (key) =>
+          key.startsWith("wc@2") ||
+          key.startsWith("walletconnect") ||
+          key.startsWith("wagmi")
+      );
+      wcKeys.forEach((key) => localStorage.removeItem(key));
+      sessionStorage.removeItem("wagmi.store");
+    } catch (error) {
+      console.warn("[Login] Failed to clear WalletConnect cache", error);
+    }
+  };
+
+  // Abort pending requests on mount/cleanup (fixes "Connection declined" on mobile)
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    return () => {
+      // Cleanup: abort any pending requests to prevent stale connection errors
+      abortController.abort();
+    };
+  }, []);
+
+  type WalletErrorInfo = { message: string; code?: number };
+
+  const extractWalletError = (err: unknown): WalletErrorInfo => {
+    if (typeof err === "string") {
+      return { message: err, code: undefined };
+    }
+    if (err && typeof err === "object") {
+      const maybeMessage =
+        "message" in err
+          ? String((err as { message?: unknown }).message ?? "")
+          : "";
+      const maybeCode =
+        "code" in err ? Number((err as { code?: unknown }).code) : undefined;
+      return {
+        message: maybeMessage,
+        code: Number.isFinite(maybeCode) ? maybeCode : undefined,
+      };
+    }
+    return { message: "", code: undefined };
+  };
 
   const setAuth = useAppStore((s) => s.setAuth);
   const setWalletConnection = useAppStore((s) => s.setWalletConnection);
@@ -64,12 +118,14 @@ export default function LoginPage() {
   useEffect(() => {
     if (connectedAddress) {
       setWalletConnection(connectedAddress as `0x${string}`);
-      
+
       // Pre-fetch nonce silently to enable 1-click login
       const prefetchNonce = async () => {
         try {
           console.log("[Login] Pre-fetching nonce...");
-          const { data } = await api.get("/auth/nonce", { params: { address: connectedAddress } });
+          const { data } = await api.get("/auth/nonce", {
+            params: { address: connectedAddress },
+          });
           setNonce(data.nonce);
           console.log("[Login] Nonce pre-fetched");
         } catch (err) {
@@ -86,7 +142,14 @@ export default function LoginPage() {
 
   // Reset loading state when connected so user can click "Login"
   useEffect(() => {
-    if (isConnected && !isModalOpen && step !== "ready_to_sign" && step !== "signing" && step !== "verifying" && step !== "success") {
+    if (
+      isConnected &&
+      !isModalOpen &&
+      step !== "ready_to_sign" &&
+      step !== "signing" &&
+      step !== "verifying" &&
+      step !== "success"
+    ) {
       setLoading(false);
       setWalletConnecting(false);
       setStatus("Wallet connected! Click 'Sign In' to verify ownership.");
@@ -114,51 +177,99 @@ export default function LoginPage() {
     }
   }, [isModalOpen, isConnected, accountStatus]);
 
-  const describeWalletError = (err: unknown) => {
-    const errorMessage =
-      err && typeof err === "object" && "message" in err
-        ? String(err.message)
-        : "";
-    const errorCode =
-      typeof err === "object" && err && "code" in err
-        ? Number((err as { code?: number }).code)
-        : undefined;
+  const [rpcError, setRpcError] = useState(false);
 
-    if (errorMessage === "WALLET_CONNECTION_CANCELLED") {
+  // Check if RPC is reachable (diagnose Firewall issues)
+  useEffect(() => {
+    const checkRpcConnection = async () => {
+      try {
+        // We use the same logic as wagmi.ts to get the RPC URL
+        const rpcUrl = wagmiConfig.chains[0].rpcUrls.default.http[0];
+        console.log("[Login] Checking RPC connection to:", rpcUrl);
+
+        // Simple fetch to check connectivity (POST to avoid GET issues with some RPCs)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        await fetch(rpcUrl, {
+          method: "POST",
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "net_version",
+            params: [],
+            id: 1,
+          }),
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        setRpcError(false);
+      } catch (err) {
+        console.error(
+          "[Login] RPC Connection failed. Firewall might be blocking port 7545.",
+          err
+        );
+        setRpcError(true);
+      }
+    };
+
+    checkRpcConnection();
+  }, []);
+
+  const describeWalletError = (
+    err: unknown,
+    info: WalletErrorInfo = extractWalletError(err)
+  ) => {
+    const { message, code } = info;
+    const normalized = message?.toLowerCase?.() ?? "";
+
+    if (message === "WALLET_CONNECTION_CANCELLED") {
       return "Wallet connection was closed. Re-open the Connect Wallet modal and approve the request.";
     }
-    if (errorCode === -32002) {
-      return "Your wallet already has a pending request. Open the wallet app, finish that prompt, then retry.";
+    if (code === -32002) {
+      return "Your wallet already has a pending request. We cleared the stale WalletConnect session—open MetaMask, finish the prompt, then tap Connect Wallet again.";
     }
     if (
-      errorMessage.toLowerCase().includes("user rejected") ||
-      errorMessage.toLowerCase().includes("user denied")
+      normalized.includes("user rejected") ||
+      normalized.includes("user denied")
     ) {
-      return "❌ Signature cancelled. Please try again when ready.";
+      return "Signature cancelled. Please try again when ready.";
     }
-    if (
-      errorMessage.toLowerCase().includes("network") ||
-      errorMessage.toLowerCase().includes("rpc")
-    ) {
-      return "❌ Network error. Make sure Ganache is reachable and that you've selected the correct chain (Chain ID 1337).";
+    if (normalized.includes("network") || normalized.includes("rpc")) {
+      return "Network error. Make sure Ganache is reachable and that you've selected the correct chain (Chain ID 1337).";
     }
-    if (errorMessage) {
-      return `❌ Connection failed: ${errorMessage}`;
+    if (message) {
+      return `Connection failed: ${message}`;
     }
-    return "❌ Connection failed. Please try again.";
+    return "Connection failed. Please try again.";
   };
 
   const handleWalletError = (
     err: unknown,
     { markStepError = true }: { markStepError?: boolean } = {}
   ) => {
+    const info = extractWalletError(err);
     console.error("Wallet error:", err);
-    setStatus(describeWalletError(err));
-    if (markStepError) {
+
+    let shouldMarkError = markStepError;
+
+    if (info.code === -32002) {
+      console.warn(
+        "[Login] Stale WalletConnect session detected. Clearing cache and disconnecting."
+      );
+      clearWalletConnectStorage();
+      disconnect();
+      setWalletConnecting(false);
+      setStep("idle");
+      shouldMarkError = false;
+    }
+
+    setStatus(describeWalletError(err, info));
+    if (shouldMarkError) {
       setStep("error");
     }
   };
-
   // Step 1: Fetch Nonce
   const initiateLogin = async (address: `0x${string}`) => {
     try {
@@ -166,10 +277,32 @@ export default function LoginPage() {
       setStep("fetching_nonce");
       setStatus("Preparing secure login...");
 
-      // Request nonce from backend
-      const { data } = await api.get("/auth/nonce", { params: { address } });
-      setNonce(data.nonce);
-      
+      // Request nonce from backend with retry logic for mobile
+      let retries = 0;
+      const maxRetries = 3;
+      let nonceData;
+
+      while (retries < maxRetries) {
+        try {
+          const { data } = await api.get("/auth/nonce", {
+            params: { address },
+          });
+          nonceData = data;
+          break;
+        } catch (err: unknown) {
+          retries++;
+          if (retries >= maxRetries) throw err;
+
+          const waitTime = Math.pow(2, retries - 1) * 1000; // Exponential backoff
+          console.warn(
+            `[Login] Nonce fetch attempt ${retries} failed, retrying in ${waitTime}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+
+      setNonce(nonceData.nonce);
+
       // Stop loading and ask user to sign
       setLoading(false);
       setStep("ready_to_sign");
@@ -197,10 +330,34 @@ export default function LoginPage() {
         message,
       });
 
-      // Send signature back to backend
+      // Send signature back to backend with retry logic
       setStep("verifying");
       setStatus("Verifying signature...");
-      const res = await api.post("/auth/login", { address: connectedAddress, signature });
+
+      let retries = 0;
+      const maxRetries = 3;
+      let loginResponse;
+
+      while (retries < maxRetries) {
+        try {
+          loginResponse = await api.post("/auth/login", {
+            address: connectedAddress,
+            signature,
+          });
+          break;
+        } catch (err: unknown) {
+          retries++;
+          if (retries >= maxRetries) throw err;
+
+          const waitTime = Math.pow(2, retries - 1) * 1000; // Exponential backoff
+          console.warn(
+            `[Login] Login attempt ${retries} failed, retrying in ${waitTime}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+
+      const res = loginResponse!;
 
       // Store JWT + role + address in Zustand store
       setAuth({
@@ -221,8 +378,17 @@ export default function LoginPage() {
       setLoading(false);
       setWalletConnecting(false);
       // Allow retry
-      setStep("ready_to_sign"); 
+      setStep("ready_to_sign");
     }
+  };
+
+  const resetConnection = () => {
+    console.log("[Login] Resetting connection state...");
+    clearWalletConnectStorage();
+    disconnect();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
   };
 
   const handleMainButtonClick = async () => {
@@ -233,7 +399,7 @@ export default function LoginPage() {
         setStep("connecting");
         setStatus("Opening wallet connection...");
         setWalletConnecting(true);
-        setLoading(true); 
+        setLoading(true);
         await open({ view: "Connect" });
         return;
       }
@@ -246,7 +412,11 @@ export default function LoginPage() {
       }
 
       // 3. If connected but no nonce, fetch nonce (Two-Step Fallback)
-      if (step === "idle" || step === "error" || (isConnected && step !== "ready_to_sign")) {
+      if (
+        step === "idle" ||
+        step === "error" ||
+        (isConnected && step !== "ready_to_sign")
+      ) {
         await initiateLogin(connectedAddress);
         return;
       }
@@ -256,7 +426,6 @@ export default function LoginPage() {
         await performSignature();
         return;
       }
-      
     } catch (err: unknown) {
       console.error("[Login] Error in handleMainButtonClick:", err);
       handleWalletError(err);
@@ -325,6 +494,21 @@ export default function LoginPage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.15),transparent_50%)]"></div>
 
             <CardHeader className="relative space-y-2 pb-4 px-4 md:px-6 pt-4 md:pt-6">
+              {rpcError && (
+                <Alert
+                  variant="destructive"
+                  className="mb-4 bg-red-900/50 border-red-500/50 text-red-200"
+                >
+                  <Info className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    <strong>Network Error:</strong> Cannot reach Blockchain
+                    (Port 7545).
+                    <br />
+                    Please check your <strong>Windows Firewall</strong> rules to
+                    allow access to Ganache.
+                  </AlertDescription>
+                </Alert>
+              )}
               <CardTitle className="text-xl md:text-2xl font-bold text-center text-white">
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400">
                   {isConnected ? "Verify Identity" : "Welcome Back"}
@@ -333,14 +517,15 @@ export default function LoginPage() {
               <CardDescription className="text-center text-gray-300 md:text-gray-400 text-xs md:text-sm font-medium">
                 {status}
               </CardDescription>
-              
+
               {/* Connected Wallet Badge */}
               {isConnected && connectedAddress && (
                 <div className="flex items-center justify-center mt-2 animate-fade-in">
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-mono">
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                    {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
-                    <button 
+                    {connectedAddress.slice(0, 6)}...
+                    {connectedAddress.slice(-4)}
+                    <button
                       onClick={() => disconnect()}
                       className="ml-2 p-1 hover:bg-blue-500/20 rounded-full transition-colors"
                       title="Disconnect Wallet"
@@ -354,15 +539,35 @@ export default function LoginPage() {
               {/* Step indicator */}
               {loading && (
                 <div className="flex items-center justify-center gap-2 pt-2">
-                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    step === "connecting" ? "bg-blue-400 scale-125" : step === "signing" || step === "verifying" || step === "success" ? "bg-emerald-400" : "bg-gray-600"
-                  }`}></div>
-                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    step === "signing" ? "bg-blue-400 scale-125" : step === "verifying" || step === "success" ? "bg-emerald-400" : "bg-gray-600"
-                  }`}></div>
-                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    step === "verifying" ? "bg-blue-400 scale-125" : step === "success" ? "bg-emerald-400" : "bg-gray-600"
-                  }`}></div>
+                  <div
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step === "connecting"
+                        ? "bg-blue-400 scale-125"
+                        : step === "signing" ||
+                          step === "verifying" ||
+                          step === "success"
+                        ? "bg-emerald-400"
+                        : "bg-gray-600"
+                    }`}
+                  ></div>
+                  <div
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step === "signing"
+                        ? "bg-blue-400 scale-125"
+                        : step === "verifying" || step === "success"
+                        ? "bg-emerald-400"
+                        : "bg-gray-600"
+                    }`}
+                  ></div>
+                  <div
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step === "verifying"
+                        ? "bg-blue-400 scale-125"
+                        : step === "success"
+                        ? "bg-emerald-400"
+                        : "bg-gray-600"
+                    }`}
+                  ></div>
                 </div>
               )}
             </CardHeader>
@@ -400,19 +605,25 @@ export default function LoginPage() {
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
                       <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                       <div className="text-xs text-gray-300">
-                        <span className="font-semibold text-blue-400">New here?</span> Click the button below to connect your Web3 wallet
+                        <span className="font-semibold text-blue-400">
+                          New here?
+                        </span>{" "}
+                        Click the button below to connect your Web3 wallet
                       </div>
                     </div>
                   </div>
                 )}
-                
+
                 {/* Ready to Sign Message */}
                 {step === "ready_to_sign" && (
                   <div className="w-full max-w-sm space-y-2 animate-fade-in">
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
                       <Zap className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
                       <div className="text-xs text-gray-300">
-                        <span className="font-semibold text-emerald-400">Ready!</span> Tap the button below to open your wallet and sign.
+                        <span className="font-semibold text-emerald-400">
+                          Ready!
+                        </span>{" "}
+                        Tap the button below to open your wallet and sign.
                       </div>
                     </div>
                   </div>
@@ -425,62 +636,104 @@ export default function LoginPage() {
                     <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
                       <div className="flex items-center gap-2 mb-3">
                         <Sparkles className="w-4 h-4 text-blue-400" />
-                        <span className="text-sm font-semibold text-blue-400">What's happening?</span>
+                        <span className="text-sm font-semibold text-blue-400">
+                          What's happening?
+                        </span>
                       </div>
                       <div className="space-y-2.5">
                         <div className="flex items-start gap-3">
-                          <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
-                            step === "connecting" || step === "fetching_nonce" || step === "ready_to_sign" || step === "signing" || step === "verifying" || step === "success"
-                              ? "bg-emerald-400 animate-pulse"
-                              : "bg-gray-600"
-                          }`}></div>
+                          <div
+                            className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
+                              step === "connecting" ||
+                              step === "fetching_nonce" ||
+                              step === "ready_to_sign" ||
+                              step === "signing" ||
+                              step === "verifying" ||
+                              step === "success"
+                                ? "bg-emerald-400 animate-pulse"
+                                : "bg-gray-600"
+                            }`}
+                          ></div>
                           <div>
-                            <div className={`text-xs font-medium ${
-                              step === "connecting" || step === "fetching_nonce" || step === "ready_to_sign" || step === "signing" || step === "verifying" || step === "success"
-                                ? "text-emerald-400"
-                                : "text-gray-500"
-                            }`}>1. Connecting Wallet</div>
-                            <div className="text-[10px] text-gray-400 mt-0.5">Approve the connection</div>
+                            <div
+                              className={`text-xs font-medium ${
+                                step === "connecting" ||
+                                step === "fetching_nonce" ||
+                                step === "ready_to_sign" ||
+                                step === "signing" ||
+                                step === "verifying" ||
+                                step === "success"
+                                  ? "text-emerald-400"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              1. Connecting Wallet
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              Approve the connection
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-start gap-3">
-                          <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
-                            step === "signing" || step === "verifying" || step === "success"
-                              ? "bg-emerald-400 animate-pulse"
-                              : "bg-gray-600"
-                          }`}></div>
+                          <div
+                            className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
+                              step === "signing" ||
+                              step === "verifying" ||
+                              step === "success"
+                                ? "bg-emerald-400 animate-pulse"
+                                : "bg-gray-600"
+                            }`}
+                          ></div>
                           <div>
-                            <div className={`text-xs font-medium ${
-                              step === "signing" || step === "verifying" || step === "success"
-                                ? "text-emerald-400"
-                                : "text-gray-500"
-                            }`}>2. Sign Message</div>
-                            <div className="text-[10px] text-gray-400 mt-0.5">Prove ownership securely</div>
+                            <div
+                              className={`text-xs font-medium ${
+                                step === "signing" ||
+                                step === "verifying" ||
+                                step === "success"
+                                  ? "text-emerald-400"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              2. Sign Message
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              Prove ownership securely
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-start gap-3">
-                          <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
-                            step === "verifying" || step === "success"
-                              ? "bg-emerald-400 animate-pulse"
-                              : "bg-gray-600"
-                          }`}></div>
-                          <div>
-                            <div className={`text-xs font-medium ${
+                          <div
+                            className={`flex-shrink-0 w-2 h-2 rounded-full mt-1.5 ${
                               step === "verifying" || step === "success"
-                                ? "text-emerald-400"
-                                : "text-gray-500"
-                            }`}>3. Verifying</div>
-                            <div className="text-[10px] text-gray-400 mt-0.5">Confirming identity</div>
+                                ? "bg-emerald-400 animate-pulse"
+                                : "bg-gray-600"
+                            }`}
+                          ></div>
+                          <div>
+                            <div
+                              className={`text-xs font-medium ${
+                                step === "verifying" || step === "success"
+                                  ? "text-emerald-400"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              3. Verifying
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              Confirming identity
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Current action hint */}
                     {step === "signing" && (
                       <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 animate-pulse">
                         <FileSignature className="w-4 h-4 text-yellow-400" />
-                        <span className="text-xs text-yellow-400 font-medium">Check your wallet for the signature request</span>
+                        <span className="text-xs text-yellow-400 font-medium">
+                          Check your wallet for the signature request
+                        </span>
                       </div>
                     )}
                   </div>
@@ -494,17 +747,21 @@ export default function LoginPage() {
                 onClick={handleMainButtonClick}
                 size="lg"
                 className={`w-full font-semibold text-sm md:text-base py-5 md:py-6 text-white bg-gradient-to-r bg-size-200 hover:bg-pos-100 border-0 shadow-2xl transition-all duration-500 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group/btn rounded-xl ${
-                  isConnected 
-                    ? "from-emerald-500 via-emerald-600 to-emerald-500 shadow-emerald-500/40 hover:shadow-emerald-500/60" 
+                  isConnected
+                    ? "from-emerald-500 via-emerald-600 to-emerald-500 shadow-emerald-500/40 hover:shadow-emerald-500/60"
                     : "from-orange-500 via-orange-600 to-orange-500 shadow-orange-500/40 hover:shadow-orange-500/60"
                 }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover/btn:translate-x-[200%] transition-transform duration-1000"></div>
-                
+
                 {loading ? (
                   <div className="flex items-center justify-center gap-2 relative z-10">
                     <Loader2 className="animate-spin w-5 h-5" />
-                    <span>{step === 'signing' ? 'Check Wallet to Sign...' : 'Processing...'}</span>
+                    <span>
+                      {step === "signing"
+                        ? "Check Wallet to Sign..."
+                        : "Processing..."}
+                    </span>
                   </div>
                 ) : step === "ready_to_sign" ? (
                   <div className="flex items-center justify-center gap-2 relative z-10">
@@ -524,6 +781,14 @@ export default function LoginPage() {
                   </div>
                 )}
               </Button>
+
+              {/* Reset Connection Button */}
+              <button
+                onClick={resetConnection}
+                className="text-[10px] md:text-xs text-gray-500 hover:text-red-400 transition-colors underline decoration-dotted underline-offset-4"
+              >
+                Trouble connecting? Reset
+              </button>
             </CardFooter>
           </Card>
 

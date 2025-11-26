@@ -14,7 +14,9 @@ function resolveFromLocation(portFallback: string) {
   }
 
   const protocol =
-    import.meta.env.VITE_API_PROTOCOL?.trim() || window.location.protocol || "http:";
+    import.meta.env.VITE_API_PROTOCOL?.trim() ||
+    window.location.protocol ||
+    "http:";
   const hostname = window.location.hostname || "127.0.0.1";
   const port = import.meta.env.VITE_API_PORT?.trim() || portFallback;
 
@@ -31,7 +33,8 @@ function overrideLocalhostUrl(url: URL, portFallback: string) {
     return url.toString();
   }
 
-  const port = url.port || import.meta.env.VITE_API_PORT?.trim() || portFallback;
+  const port =
+    url.port || import.meta.env.VITE_API_PORT?.trim() || portFallback;
   const protocol = url.protocol || window.location.protocol || "http:";
   return `${protocol}//${currentHost}:${port}`;
 }
@@ -57,8 +60,29 @@ export function resolveApiBaseUrl() {
 
 export const api = axios.create({
   baseURL: resolveApiBaseUrl(),
-  timeout: 10000,
+  timeout: 30000, // Increased timeout for mobile browsers (30 seconds)
 });
+
+// Add response interceptor to handle mobile-specific connection issues
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Handle "Connection declined" and timeout errors gracefully on mobile
+    if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+      console.error(
+        "[API] Request timeout - mobile browser may have poor connection:",
+        error.message
+      );
+    }
+    if (error.response?.status === 0 || error.code === "ERR_NETWORK") {
+      console.error(
+        "[API] Network error - ensure backend is reachable:",
+        error.message
+      );
+    }
+    return Promise.reject(error);
+  }
+);
 
 export function setAuthToken(token?: string) {
   if (token) {
