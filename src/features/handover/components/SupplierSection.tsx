@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Tabs,
   TabsContent,
@@ -154,6 +154,10 @@ export function SupplierSection() {
   const [takeoverDialogOpen, setTakeoverDialogOpen] = useState(false);
   const [takeoverTarget, setTakeoverTarget] = useState<SupplierShipmentRecord | null>(null);
   const [takeoverForm, setTakeoverForm] = useState({ latitude: "", longitude: "" });
+  const [takeoverLocating, setTakeoverLocating] = useState(false);
+  const [takeoverLocationError, setTakeoverLocationError] = useState<string | null>(null);
+  const [acceptDialogSegmentId, setAcceptDialogSegmentId] = useState<string | null>(null);
+  const [acceptingInProgress, setAcceptingInProgress] = useState<string | null>(null);
   const getSegmentReference = (shipment: SupplierShipmentRecord) => shipment.segmentId ?? shipment.id;
   const statusOrder = supplier.statusOrder;
   const defaultTab = statusOrder[0] ?? "PENDING";
@@ -163,6 +167,8 @@ export function SupplierSection() {
     supplier.takeoverPending &&
     supplier.takeoverSegmentId === takeoverSegmentIdentifier;
   const takeoverDisabled =
+    takeoverLocating ||
+    takeoverLocationError !== null ||
     takeoverForm.latitude.trim().length === 0 ||
     takeoverForm.longitude.trim().length === 0 ||
     takeoverBusy;
@@ -175,6 +181,31 @@ export function SupplierSection() {
   const openTakeoverDialog = (shipment: SupplierShipmentRecord) => {
     setTakeoverTarget(shipment);
     setTakeoverForm({ latitude: "", longitude: "" });
+    setTakeoverLocationError(null);
+    setTakeoverLocating(true);
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      toast.error("Geolocation is unavailable in this browser.");
+      setTakeoverLocating(false);
+      setTakeoverLocationError("Geolocation unavailable");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setTakeoverForm({
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        });
+        setTakeoverLocating(false);
+        setTakeoverLocationError(null);
+      },
+      (error) => {
+        console.error(error);
+        toast.error("Unable to fetch your location. Allow location access and try again.");
+        setTakeoverLocating(false);
+        setTakeoverLocationError("Location access denied or unavailable");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
     setTakeoverDialogOpen(true);
   };
 
@@ -182,6 +213,8 @@ export function SupplierSection() {
     setTakeoverDialogOpen(false);
     setTakeoverTarget(null);
     setTakeoverForm({ latitude: "", longitude: "" });
+    setTakeoverLocating(false);
+    setTakeoverLocationError(null);
   };
 
   const handleTakeoverDialogChange = (open: boolean) => {
@@ -225,11 +258,25 @@ export function SupplierSection() {
     openTakeoverDialog,
     handleDownloadProof,
     handleReportIssue,
+    acceptDialogSegmentId,
+    setAcceptDialogSegmentId,
+    acceptingInProgress,
+    setAcceptingInProgress,
   };
 
   if (!canRender) {
     return null;
   }
+
+  useEffect(() => {
+    if (
+      acceptingInProgress &&
+      !supplier.acceptShipmentPending
+    ) {
+      setAcceptDialogSegmentId(null);
+      setAcceptingInProgress(null);
+    }
+  }, [acceptingInProgress, supplier.acceptShipmentPending]);
 
   return (
     <div className="space-y-6">
@@ -271,7 +318,7 @@ export function SupplierSection() {
           <DialogHeader>
             <DialogTitle>Confirm segment takeover</DialogTitle>
             <DialogDescription>
-              Provide the GPS coordinates where the segment handoff occurred.
+              We will use your current location for this takeover request.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -283,35 +330,23 @@ export function SupplierSection() {
                 </span>
               </p>
             </div>
-            <div className="grid gap-2">
-              <label htmlFor="takeover-latitude" className="text-sm font-medium">
-                Latitude
-              </label>
-              <Input
-                id="takeover-latitude"
-                type="number"
-                step="any"
-                placeholder="e.g., 6.8341"
-                value={takeoverForm.latitude}
-                onChange={(event) =>
-                  setTakeoverForm((prev) => ({ ...prev, latitude: event.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <label htmlFor="takeover-longitude" className="text-sm font-medium">
-                Longitude
-              </label>
-              <Input
-                id="takeover-longitude"
-                type="number"
-                step="any"
-                placeholder="e.g., 79.8693"
-                value={takeoverForm.longitude}
-                onChange={(event) =>
-                  setTakeoverForm((prev) => ({ ...prev, longitude: event.target.value }))
-                }
-              />
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Location status</label>
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm">
+                {takeoverLocating ? (
+                  <span className="inline-flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Fetching your GPS location...
+                  </span>
+                ) : takeoverLocationError ? (
+                  <span className="text-destructive">{takeoverLocationError}</span>
+                ) : (
+                  <span className="text-muted-foreground">Location captured and ready to send.</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Your browser location is captured automatically and will be sent with this takeover.
+              </p>
             </div>
           </div>
           <DialogFooter className="gap-2">
@@ -446,6 +481,10 @@ type SupplierActionContext = {
   openTakeoverDialog: (shipment: SupplierShipmentRecord) => void;
   handleDownloadProof: (shipment: SupplierShipmentRecord) => void;
   handleReportIssue: (shipment: SupplierShipmentRecord) => void;
+  acceptDialogSegmentId: string | null;
+  setAcceptDialogSegmentId: (id: string | null) => void;
+  acceptingInProgress: string | null;
+  setAcceptingInProgress: (id: string | null) => void;
 };
 
 type SupplierShipmentActionsProps = {
@@ -455,7 +494,17 @@ type SupplierShipmentActionsProps = {
 };
 
 const SupplierShipmentActions = ({ status, shipment, context }: SupplierShipmentActionsProps) => {
-  const { supplier, openHandoverDialog, openTakeoverDialog, handleDownloadProof, handleReportIssue } = context;
+  const {
+    supplier,
+    openHandoverDialog,
+    openTakeoverDialog,
+    handleDownloadProof,
+    handleReportIssue,
+    acceptDialogSegmentId,
+    setAcceptDialogSegmentId,
+    acceptingInProgress,
+    setAcceptingInProgress,
+  } = context;
   if (!supplier.enabled) return null;
   const segmentIdentifier = shipment.segmentId ?? shipment.id;
   const allowAction = (
@@ -471,13 +520,27 @@ const SupplierShipmentActions = ({ status, shipment, context }: SupplierShipment
       const canAccept = allowAction("canAccept");
       const isAccepting =
         supplier.acceptShipmentPending && supplier.acceptingShipmentId === segmentIdentifier;
+      const dialogOpen = acceptDialogSegmentId === segmentIdentifier;
+      const handleDialogChange = (open: boolean) => {
+        if (isAccepting) return;
+        setAcceptDialogSegmentId(open ? segmentIdentifier : null);
+      };
+      const itemPreview = extractShipmentItems(shipment).slice(0, 3);
+      const remainingItems = Math.max(extractShipmentItems(shipment).length - itemPreview.length, 0);
+      const arrivalText = formatArrivalText(shipment.expectedArrival);
+      const handleAccept = () => {
+        if (isAccepting || !canAccept) return;
+        setAcceptingInProgress(segmentIdentifier);
+        supplier.acceptShipment(String(segmentIdentifier));
+      };
       return (
-        <AlertDialog>
+        <AlertDialog open={dialogOpen} onOpenChange={handleDialogChange}>
           <AlertDialogTrigger asChild>
             <Button
               size="sm"
               className="gap-2"
               disabled={isAccepting || !canAccept}
+              onClick={() => setAcceptDialogSegmentId(segmentIdentifier)}
             >
               {isAccepting ? (
                 <>
@@ -496,20 +559,80 @@ const SupplierShipmentActions = ({ status, shipment, context }: SupplierShipment
             <AlertDialogHeader>
               <AlertDialogTitle>Accept segment {segmentIdentifier}?</AlertDialogTitle>
             </AlertDialogHeader>
-            <p className="text-sm text-muted-foreground">
-              Confirm the contents and condition before accepting. The manufacturer will be notified.
-            </p>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>Review the segment details before accepting. The manufacturer will be notified.</p>
+              <div className="rounded-md border border-border/60 bg-muted/30 p-3 text-foreground">
+                <div className="flex flex-col gap-1 text-sm">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Shipment ID</span>
+                    <span className="font-medium text-foreground">
+                      {shipment.shipmentId ?? segmentIdentifier}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Segment ID</span>
+                    <span className="font-medium text-foreground">{segmentIdentifier}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>From</span>
+                    <span className="font-medium text-foreground">
+                      {shipment.manufacturerName ?? shipment.fromUUID ?? "Unknown"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>To</span>
+                    <span className="font-medium text-foreground">
+                      {shipment.consumerName ?? shipment.destinationPartyName ?? "Unknown"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Expected arrival</span>
+                    <span className="font-medium text-foreground">{arrivalText}</span>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Items</p>
+                  {itemPreview.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No items listed</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {itemPreview.map((item, idx) => (
+                        <div key={`${segmentIdentifier}-preview-${idx}`} className="flex justify-between text-sm">
+                          <span className="font-medium text-foreground">{item.productName}</span>
+                          <span className="text-muted-foreground">x{item.quantity}</span>
+                        </div>
+                      ))}
+                      {remainingItems > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          +{remainingItems} more item{remainingItems > 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={isAccepting}>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => supplier.acceptShipment(String(segmentIdentifier))}
+                onClick={(event) => {
+                  event.preventDefault();
+                  handleAccept();
+                }}
                 disabled={
                   !canAccept ||
                   (supplier.acceptShipmentPending &&
                     supplier.acceptingShipmentId === segmentIdentifier)
                 }
               >
-                Confirm
+                {isAccepting ? (
+                  <span className="inline-flex items-center gap-2">
+                    <LoaderIndicator />
+                    Accepting...
+                  </span>
+                ) : (
+                  "Confirm"
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -741,11 +864,51 @@ function LoaderIndicator() {
 
 function SupplierHandoverDialog() {
   const supplier = useSupplierContext();
+  const [handoverLocating, setHandoverLocating] = useState(false);
+  const [handoverLocationError, setHandoverLocationError] = useState<string | null>(null);
 
   if (!supplier.enabled) return null;
   const coordsMissing =
     supplier.handoverForm.latitude.trim().length === 0 ||
     supplier.handoverForm.longitude.trim().length === 0;
+
+  const requestHandoverLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      toast.error("Geolocation is unavailable in this browser.");
+      setHandoverLocationError("Geolocation unavailable");
+      return;
+    }
+    setHandoverLocating(true);
+    setHandoverLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        supplier.setHandoverForm((prev) => ({
+          ...prev,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }));
+        setHandoverLocating(false);
+        setHandoverLocationError(null);
+      },
+      (error) => {
+        console.error(error);
+        toast.error("Unable to fetch your location. Allow location access and try again.");
+        setHandoverLocating(false);
+        setHandoverLocationError("Location access denied or unavailable");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  useEffect(() => {
+    if (supplier.handoverDialogOpen) {
+      requestHandoverLocation();
+    } else {
+      setHandoverLocationError(null);
+      setHandoverLocating(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplier.handoverDialogOpen]);
 
   return (
     <Dialog open={supplier.handoverDialogOpen} onOpenChange={supplier.setHandoverDialogOpen}>
@@ -753,50 +916,31 @@ function SupplierHandoverDialog() {
         <DialogHeader>
           <DialogTitle>Handover shipment</DialogTitle>
           <DialogDescription>
-            Provide the receiving party, checkpoint notes, and GPS coordinates to finalize this handover.
+            Your current location will be attached to finalize this handover.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <p className="text-sm text-muted-foreground">
-            This handover request only submits geographic coordinates. Enter the latitude and longitude of the handover
-            location.
+            Browser location is requested automatically; the coordinates are sent with this handover.
           </p>
-          <div className="grid gap-2">
-            <label htmlFor="handoverLatitude" className="text-sm font-medium">
-              Latitude
-            </label>
-            <Input
-              id="handoverLatitude"
-              type="number"
-              step="any"
-              placeholder="e.g., 6.1248"
-              value={supplier.handoverForm.latitude}
-              onChange={(event) =>
-                supplier.setHandoverForm((prev) => ({
-                  ...prev,
-                  latitude: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="grid gap-2">
-            <label htmlFor="handoverLongitude" className="text-sm font-medium">
-              Longitude
-            </label>
-            <Input
-              id="handoverLongitude"
-              type="number"
-              step="any"
-              placeholder="e.g., 81.1185"
-              value={supplier.handoverForm.longitude}
-              onChange={(event) =>
-                supplier.setHandoverForm((prev) => ({
-                  ...prev,
-                  longitude: event.target.value,
-                }))
-              }
-            />
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Location status</label>
+            <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm">
+              {handoverLocating ? (
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Fetching your GPS location...
+                </span>
+              ) : handoverLocationError ? (
+                <span className="text-destructive">{handoverLocationError}</span>
+              ) : (
+                <span className="text-muted-foreground">Location captured and ready to send.</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              If permission is blocked, enable location in your browser and reopen this dialog.
+            </p>
           </div>
         </div>
 
@@ -806,7 +950,12 @@ function SupplierHandoverDialog() {
           </Button>
           <Button
             onClick={supplier.submitHandover}
-            disabled={supplier.handoverLoading || coordsMissing}
+            disabled={
+              supplier.handoverLoading ||
+              handoverLocating ||
+              handoverLocationError !== null ||
+              coordsMissing
+            }
           >
             {supplier.handoverLoading ? (
               <span className="inline-flex items-center gap-2">

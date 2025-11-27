@@ -79,6 +79,7 @@ const App = () => {
                   <Route path="products/create" element={<CreateProduct />} />
                   <Route path="products/:id" element={<ProductDetail />} />
                   <Route path="handover" element={<Handover />} />
+                  <Route path="alerts" element={<Alerts />} />
                   <Route path="analytics" element={<Analytics />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />

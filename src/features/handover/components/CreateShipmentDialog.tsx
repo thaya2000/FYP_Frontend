@@ -18,10 +18,14 @@ import { Loader2, Plus } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useHandoverSharedContext, useManufacturerContext } from "../context";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/services/api";
+import { useMemo, useState } from "react";
 
 export function CreateShipmentDialog() {
   const shared = useHandoverSharedContext();
   const manufacturer = useManufacturerContext();
+  const [destSearch, setDestSearch] = useState("");
 
   if (!manufacturer.enabled || shared.role !== "MANUFACTURER") {
     return null;
@@ -45,6 +49,41 @@ export function CreateShipmentDialog() {
     addLeg,
   } = manufacturer;
 
+  const {
+    data: destinationResults = [],
+    isFetching: loadingDestinations,
+  } = useQuery({
+    queryKey: ["consumer-destinations", destSearch],
+    queryFn: async () => {
+      const res = await api.get("/api/checkpoints", {
+        params: { ownerType: "CONSUMER", name: destSearch },
+      });
+      const payload = res.data;
+      if (Array.isArray(payload)) return payload;
+      if (payload && Array.isArray(payload.data)) return payload.data;
+      return [];
+    },
+    enabled: destSearch.trim().length >= 2,
+    staleTime: 30_000,
+  });
+
+  const destinationOptions = useMemo(() => {
+    return destinationResults.map((item: any) => {
+      const labelLeft = item?.name || "Checkpoint";
+      const labelRight = item?.state || item?.country || item?.checkpointType || item?.id || "";
+      const value = item?.ownerUUID || item?.owner_uuid || item?.id || "";
+      return {
+        value: String(value),
+        label: `${labelLeft} - ${labelRight}`,
+      };
+    });
+  }, [destinationResults]);
+
+  const handleSelectDestination = (option: { value: string; label: string }) => {
+    setDestUUID(option.value);
+    setDestSearch(option.label);
+  };
+
   return (
     <Dialog open={createOpen} onOpenChange={setCreateOpen}>
       <DialogTrigger asChild>
@@ -59,13 +98,47 @@ export function CreateShipmentDialog() {
         </DialogHeader>
 
         <form onSubmit={handleCreateShipment} className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Destination Party UUID</label>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Destination Party</label>
             <Input
-              placeholder="DST-003"
-              value={destUUID}
-              onChange={(event) => setDestUUID(event.target.value)}
+              placeholder="Search consumer checkpoints (type at least 2 characters)"
+              value={destSearch}
+              onChange={(event) => setDestSearch(event.target.value)}
             />
+            <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Selected UUID:</span>
+                <span className="font-semibold text-foreground">{destUUID || "None"}</span>
+              </div>
+              {destSearch.trim().length >= 2 ? (
+                <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {loadingDestinations ? (
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm px-1 py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Searching...
+                    </div>
+                  ) : destinationOptions.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-muted-foreground">No matches found.</p>
+                  ) : (
+                    destinationOptions.map((option) => (
+                      <button
+                        key={option.value + option.label}
+                        type="button"
+                        className="flex w-full justify-between rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
+                        onClick={() => handleSelectDestination(option)}
+                      >
+                        <span className="text-foreground">{option.label}</span>
+                        <span className="text-xs text-muted-foreground">UUID: {option.value}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Start typing to search consumer checkpoints (min 2 characters).
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">

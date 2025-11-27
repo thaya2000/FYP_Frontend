@@ -425,7 +425,13 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     enabled: Boolean(uuid) && role === "MANUFACTURER",
   });
 
-  const availablePackages = manufacturerPackages;
+  const availablePackages = useMemo(() => {
+    const READY_STATUS = "PACKAGE_READY_FOR_SHIPMENT";
+    return manufacturerPackages.filter((pkg) => {
+      if (!pkg?.status || typeof pkg.status !== "string") return false;
+      return pkg.status.trim().toUpperCase() === READY_STATUS;
+    });
+  }, [manufacturerPackages]);
 
   const resetPackageSelections = useCallback(() => setSelectedPackageIds([]), []);
 

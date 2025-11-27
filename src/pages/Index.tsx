@@ -179,82 +179,81 @@ const ManufacturerDashboard = ({
 
       <DashboardStats />
 
-        <div className="space-y-6">
-          <Card className="border border-border/60 bg-gradient-to-br from-primary/5 via-background to-background shadow-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Live shipments</CardTitle>
+      <div className="space-y-6">
+        <Card className="border border-border/60 bg-gradient-to-br from-primary/5 via-background to-background shadow-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Live shipments</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              In-transit consignments needing attention
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {liveShipments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                In-transit consignments needing attention
+                No shipments in transit. Create one to start tracking.
               </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {liveShipments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No shipments in transit. Create one to start tracking.
-                </p>
-              ) : (
-                liveShipments.map((shipment) => (
-                  <div
-                    key={shipment.id}
-                    className="rounded-2xl border border-border/70 bg-background/60 p-4"
-                  >
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="font-semibold">{shipment.id}</div>
-                      <Badge variant="outline">{shipment.status.replace(/_/g, " ").toLowerCase()}</Badge>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <MapPin className="h-3.5 w-3.5 text-primary" />
-                      Route checkpoints: {shipment.route?.length ?? 0}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      ETA:{" "}
-                      {shipment.estimatedDelivery
-                        ? new Date(shipment.estimatedDelivery).toLocaleString()
-                        : "Pending"}
+            ) : (
+              liveShipments.map((shipment) => (
+                <div
+                  key={shipment.id}
+                  className="rounded-2xl border border-border/70 bg-background/60 p-4"
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="font-semibold">{shipment.id}</div>
+                    <Badge variant="outline">{shipment.status.replace(/_/g, " ").toLowerCase()}</Badge>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                    Route checkpoints: {shipment.route?.length ?? 0}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    ETA:{" "}
+                    {shipment.estimatedDelivery
+                      ? new Date(shipment.estimatedDelivery).toLocaleString()
+                      : "Pending"}
+                  </p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/60 bg-gradient-to-br from-secondary/5 via-background to-background shadow-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Active alerts</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Latest compliance signals across your network
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {activeAlerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No open alerts right now.</p>
+            ) : (
+              activeAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3"
+                >
+                  <span
+                    className={`mt-1 h-2.5 w-2.5 rounded-full ${alert.level === "CRITICAL"
+                      ? "bg-destructive"
+                      : alert.level === "WARN"
+                        ? "bg-amber-400"
+                        : "bg-secondary"
+                      }`}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">{alert.message}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(alert.ts).toLocaleString()}
                     </p>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/60 bg-gradient-to-br from-secondary/5 via-background to-background shadow-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Active alerts</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Latest compliance signals across your network
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {activeAlerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No open alerts right now.</p>
-              ) : (
-                activeAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3"
-                  >
-                    <span
-                      className={`mt-1 h-2.5 w-2.5 rounded-full ${
-                        alert.level === "CRITICAL"
-                          ? "bg-destructive"
-                          : alert.level === "WARN"
-                          ? "bg-amber-400"
-                          : "bg-secondary"
-                      }`}
-                    />
-                    <div>
-                      <p className="text-sm font-medium">{alert.message}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(alert.ts).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -342,10 +341,10 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
   const stateOptions =
     selectedCountry === "ALL"
       ? Array.from(
-          new Set(
-            pendingShipments.map((shipment) => deriveShipmentLocation(shipment).state ?? "Unknown"),
-          ),
-        ).sort()
+        new Set(
+          pendingShipments.map((shipment) => deriveShipmentLocation(shipment).state ?? "Unknown"),
+        ),
+      ).sort()
       : locationMetadata.statesByCountry.get(selectedCountry) ?? [];
 
   const quickAcceptMatches = useMemo(() => {
@@ -366,10 +365,17 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
     supplier.acceptingShipmentId === quickAcceptSegmentId;
 
   const handleQuickAccept = () => {
-    if (!quickAcceptTarget) return;
-    supplier.acceptShipment(String(getSegmentReference(quickAcceptTarget)));
+    try {
+      if (!quickAcceptTarget) return;
+
+      supplier.acceptShipment(String(getSegmentReference(quickAcceptTarget)));
+
+    } catch (error) {
+      console.error("Error in handleQuickAccept:", error);
+    }
     setQuickAcceptTarget(null);
   };
+
 
   const activeAlerts = alerts.filter((alert) => !alert.acknowledged);
 
