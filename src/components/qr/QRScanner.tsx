@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import jsQR from 'jsqr';
 import { Button } from '@/components/ui/button';
@@ -18,45 +18,73 @@ export const QRScanner = ({ onScan, onClose, title = "Scan QR Code" }: QRScanner
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const webcamRef = useRef<Webcam>(null);
-  const intervalRef = useRef<NodeJS.Timeout>();
+  const rafRef = useRef<number>();
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const capture = useCallback(() => {
-    const imageSrc = webcamRef.current?.getScreenshot();
-    if (imageSrc) {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        context?.drawImage(img, 0, 0);
-        
-        const imageData = context?.getImageData(0, 0, canvas.width, canvas.height);
-        if (imageData) {
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
-          if (code) {
-            onScan(code.data);
-            toast({
-              title: "QR Code Scanned",
-              description: "Successfully scanned QR code",
-            });
-          }
-        }
-      };
-      img.src = imageSrc;
+  const stopScanLoop = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = undefined;
+    }
+  };
+
+  const captureFrame = useCallback(() => {
+    const video = webcamRef.current?.video as HTMLVideoElement | undefined;
+    if (!video || video.readyState !== 4) {
+      rafRef.current = requestAnimationFrame(captureFrame);
+      return;
+    }
+
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    if (!width || !height) {
+      rafRef.current = requestAnimationFrame(captureFrame);
+      return;
+    }
+
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas');
+    }
+
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      rafRef.current = requestAnimationFrame(captureFrame);
+      return;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    const code = jsQR(imageData.data, width, height);
+
+    if (code) {
+      stopScanLoop();
+      onScan(code.data);
+      toast({
+        title: "QR Code Scanned",
+        description: "Successfully scanned QR code",
+      });
+    } else {
+      rafRef.current = requestAnimationFrame(captureFrame);
     }
   }, [onScan]);
 
   const startCamera = () => {
     setIsCameraOn(true);
-    intervalRef.current = setInterval(capture, 100);
+    stopScanLoop();
+    rafRef.current = requestAnimationFrame(captureFrame);
   };
 
   const stopCamera = () => {
     setIsCameraOn(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
+    stopScanLoop();
+  };
+
+  const handleClose = () => {
+    stopCamera();
+    onClose();
   };
 
   const handleManualSubmit = () => {
@@ -69,6 +97,9 @@ export const QRScanner = ({ onScan, onClose, title = "Scan QR Code" }: QRScanner
     }
   };
 
+  // Ensure scan loop stops if the component unmounts.
+  useEffect(() => stopScanLoop, []);
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-md">
@@ -78,7 +109,7 @@ export const QRScanner = ({ onScan, onClose, title = "Scan QR Code" }: QRScanner
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={onClose}
+              onClick={handleClose}
               className="h-8 w-8 p-0"
             >
               <X className="h-4 w-4" />
@@ -101,10 +132,12 @@ export const QRScanner = ({ onScan, onClose, title = "Scan QR Code" }: QRScanner
                       ref={webcamRef}
                       audio={false}
                       screenshotFormat="image/jpeg"
-                      className="w-full rounded-lg"
                       videoConstraints={{
-                        facingMode: "environment"
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
                       }}
+                      className="w-full rounded-lg"
                     />
                   </div>
                   <Button 

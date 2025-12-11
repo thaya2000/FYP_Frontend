@@ -74,6 +74,175 @@ type PackageStatusResponse = {
   };
 };
 
+type PdfLine = {
+  text: string;
+  color?: [number, number, number];
+  font?: "regular" | "bold";
+  size?: number;
+  gapBefore?: number;
+};
+
+const sanitizeToAscii = (value: string) =>
+  value
+    .replace(/\r/g, "")
+    .replace(/\t/g, " ")
+    .replace(/[^\x20-\x7E]/g, "?")
+    .trim();
+
+const wrapLine = (line: PdfLine, limit = 86): PdfLine[] => {
+  const safe = sanitizeToAscii(line.text);
+  if (!safe) return [];
+
+  const words = safe.split(/\s+/);
+  const wrapped: PdfLine[] = [];
+  let current = "";
+
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > limit && current) {
+      wrapped.push({ ...line, text: current, gapBefore: line.gapBefore });
+      current = word;
+      line.gapBefore = 0;
+    } else {
+      current = candidate;
+    }
+  });
+
+  if (current) {
+    wrapped.push({ ...line, text: current, gapBefore: line.gapBefore });
+  }
+
+  return wrapped;
+};
+
+const splitIntoPages = (lines: PdfLine[]) => {
+  const pages: PdfLine[][] = [];
+  const maxHeight = 740;
+  let current: PdfLine[] = [];
+  let currentHeight = 0;
+
+  const heightForLine = (line: PdfLine) =>
+    (line.size ?? 11) + 3 + (line.gapBefore ?? 0);
+
+  lines.forEach((line) => {
+    const lineHeight = heightForLine(line);
+    if (currentHeight + lineHeight > maxHeight && current.length) {
+      pages.push(current);
+      current = [];
+      currentHeight = 0;
+    }
+    current.push(line);
+    currentHeight += lineHeight;
+  });
+
+  if (current.length) {
+    pages.push(current);
+  }
+
+  return pages;
+};
+
+const escapePdfText = (text: string) =>
+  sanitizeToAscii(text).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+
+const buildPdfContentStream = (pageLines: PdfLine[]) => {
+  const topPaddingLines = 2;
+  const paddingHeight = topPaddingLines * 14; // approximate line height
+  const startY = 787 - paddingHeight; // add two-line top padding
+  const commands: string[] = ["BT", "/F1 11 Tf", "0 0 0 rg", `50 ${startY} Td`];
+
+  pageLines.forEach((line, idx) => {
+    const size = line.size ?? 11;
+    const color = line.color ?? [0.15, 0.15, 0.18];
+    const font = line.font === "bold" ? "/F2" : "/F1";
+    const gap = line.gapBefore ?? 0;
+    const moveY = idx === 0 ? 0 : size + 3 + gap;
+
+    commands.push(`0 -${moveY} Td`);
+    commands.push(`${color[0]} ${color[1]} ${color[2]} rg`);
+    commands.push(`${font} ${size} Tf`);
+    commands.push(`(${escapePdfText(line.text)}) Tj`);
+  });
+
+  commands.push("ET");
+  return commands.join("\n");
+};
+
+const buildPdfBlob = (pages: PdfLine[][]) => {
+  if (!pages.length) return null;
+
+  const pageObjectsStart = 5;
+  const contentObjectsStart = pageObjectsStart + pages.length;
+  const lastObjectId = contentObjectsStart + pages.length - 1;
+
+  const pdfObjects: Record<number, string> = {
+    1: `1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj`,
+    3: `3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj`,
+    4: `4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj`,
+  };
+
+  pages.forEach((pageLines, idx) => {
+    const pageObjectId = pageObjectsStart + idx;
+    const contentObjectId = contentObjectsStart + idx;
+    const contentStream = buildPdfContentStream(pageLines);
+
+    pdfObjects[pageObjectId] = `${pageObjectId} 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentObjectId} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>
+endobj`;
+
+    pdfObjects[contentObjectId] = `${contentObjectId} 0 obj
+<< /Length ${contentStream.length} >>
+stream
+${contentStream}
+endstream
+endobj`;
+  });
+
+  const kids = pages
+    .map((_, idx) => `${pageObjectsStart + idx} 0 R`)
+    .join(" ");
+
+  pdfObjects[2] = `2 0 obj
+<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>
+endobj`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+
+  for (let id = 1; id <= lastObjectId; id++) {
+    const obj = pdfObjects[id];
+    if (!obj) continue;
+    offsets[id] = pdf.length;
+    pdf += `${obj}\n`;
+  }
+
+  const xrefStart = pdf.length;
+  pdf += `xref
+0 ${lastObjectId + 1}
+0000000000 65535 f 
+`;
+
+  for (let id = 1; id <= lastObjectId; id++) {
+    const offset = offsets[id] ?? 0;
+    pdf += `${String(offset).padStart(10, "0")} 00000 n 
+`;
+  }
+
+  pdf += `trailer
+<< /Size ${lastObjectId + 1} /Root 1 0 R >>
+startxref
+${xrefStart}
+%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+};
+
 export default function QRScannerPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,24 +283,129 @@ export default function QRScannerPage() {
 
   const handleDownloadPdf = () => {
     if (!printRef.current || !statusResult) return;
-    const win = window.open("", "", "width=900,height=1000");
-    if (!win) return;
-    const styles = `
-      <style>
-        body { font-family: Arial, sans-serif; padding: 16px; color: #111827; }
-        h1 { font-size: 20px; margin-bottom: 8px; }
-        h2 { font-size: 16px; margin-top: 16px; margin-bottom: 6px; }
-        p, li, span, div { font-size: 12px; line-height: 1.4; }
-        .section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
-        .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
-        .muted { color: #6b7280; }
-      </style>
-    `;
-    win.document.write(`<html><head>${styles}</head><body>${printRef.current.innerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    win.print();
-    win.close();
+
+    const primary: [number, number, number] = [0.14, 0.32, 0.63];
+    const secondary: [number, number, number] = [0.25, 0.55, 0.38];
+    const muted: [number, number, number] = [0.38, 0.42, 0.48];
+    const lines: PdfLine[] = [];
+
+    const add = (text: string, opts: Partial<PdfLine> = {}) => {
+      const wrapped = wrapLine({ text, ...opts });
+      lines.push(...wrapped);
+    };
+
+    const addSection = (title: string) => {
+      add(title, { font: "bold", size: 13, color: primary, gapBefore: 12 });
+    };
+
+    add("Package Status Report", { font: "bold", size: 16, color: primary });
+    add(`Generated: ${new Date().toLocaleString()}`, { size: 10, color: muted, gapBefore: 4 });
+    add(`Payload: ${lastScannedValue ?? "N/A"}`, { size: 10, color: muted, gapBefore: 4 });
+
+    addSection("Package");
+    add(`UUID: ${statusResult.package?.package_uuid ?? "N/A"}`, { font: "bold" });
+    add(`Status: ${statusResult.package?.package_accepted ?? "N/A"}`, { color: secondary });
+    add(`Batch: ${statusResult.package?.batch_id ?? "N/A"}`);
+    add(
+      `Created: ${
+        statusResult.package?.created_at
+          ? new Date(statusResult.package.created_at).toLocaleString()
+          : "N/A"
+      }`
+    );
+
+    addSection("Product");
+    add(`Name: ${statusResult.package?.product?.name ?? "Unknown product"}`, { font: "bold" });
+    add(`Type: ${statusResult.package?.product?.type ?? "N/A"}`);
+    if (statusResult.package?.product?.temperature_requirements) {
+      add(
+        `Temp Range: ${statusResult.package.product.temperature_requirements.min ?? "N/A"} to ${statusResult.package.product.temperature_requirements.max ?? "N/A"}`
+      );
+    }
+
+    addSection("Shipment Chain");
+    if (statusResult.shipment_chain?.length) {
+      statusResult.shipment_chain.forEach((shipment, idx) => {
+        add(`Shipment ${idx + 1}: ${shipment.shipment_id ?? "N/A"}`, {
+          font: "bold",
+          color: primary,
+          gapBefore: idx === 0 ? 6 : 10,
+        });
+        add(`Status: ${shipment.status ?? "N/A"}`, { color: secondary });
+        add(
+          `Date: ${
+            shipment.shipment_date ? new Date(shipment.shipment_date).toLocaleString() : "N/A"
+          }`
+        );
+        if (shipment.segments?.length) {
+          shipment.segments.forEach((segment) => {
+            add(
+              `• Segment ${segment.segment_order ?? "-"}: ${segment.status ?? "N/A"}`,
+              { gapBefore: 6, font: "bold", size: 12 }
+            );
+            add(
+              `  From ${segment.from_location?.name ?? "Unknown"} -> ${segment.to_location?.name ?? "Unknown"}`
+            );
+            add(
+              `  ETA: ${
+                segment.estimated_arrival_date
+                  ? new Date(segment.estimated_arrival_date).toLocaleString()
+                  : "N/A"
+              }`
+            );
+          });
+        }
+      });
+    } else {
+      add("No shipment records available.", { color: muted });
+    }
+
+    addSection("Breaches");
+    const stats = statusResult.breaches?.statistics;
+    if (stats) {
+      add(
+        `Totals -> Active: ${stats.active ?? 0}, Resolved: ${stats.resolved ?? 0}, Overall: ${
+          stats.total ?? 0
+        }`,
+        { color: secondary }
+      );
+    }
+
+    if (statusResult.breaches?.records?.length) {
+      statusResult.breaches.records.forEach((breach, idx) => {
+        add(
+          `#${idx + 1} ${breach.breach_type ?? "Breach"}`,
+          { font: "bold", color: primary, gapBefore: idx === 0 ? 6 : 8 }
+        );
+        add(`Severity: ${breach.severity ?? "N/A"}`, { color: secondary });
+        add(
+          `Detected: ${
+            breach.detected_at ? new Date(breach.detected_at).toLocaleString() : "N/A"
+          }`
+        );
+        add(`Status: ${breach.status ?? "N/A"}`);
+        if (breach.threshold) {
+          add(
+            `Threshold -> Min: ${breach.threshold.min ?? "N/A"}, Max: ${breach.threshold.max ?? "N/A"}`
+          );
+        }
+      });
+    } else {
+      add("No breach records reported.", { color: muted });
+    }
+
+    const pages = splitIntoPages(lines);
+    const pdfBlob = buildPdfBlob(pages);
+    if (!pdfBlob) return;
+
+    const url = URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = statusResult.package?.package_uuid
+      ? `package-${statusResult.package.package_uuid}.pdf`
+      : "package-status.pdf";
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
