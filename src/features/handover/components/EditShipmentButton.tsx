@@ -156,7 +156,7 @@ export function EditShipmentButton({ shipment, onUpdated }: EditShipmentButtonPr
                     onChange={(event) => updateLeg(index, { timeTolerance: event.target.value })}
                   />
                 </div>
-                <div>
+                {/* <div>
                   <label className="text-xs text-muted-foreground">Required Action</label>
                   <Textarea
                     rows={2}
@@ -164,7 +164,7 @@ export function EditShipmentButton({ shipment, onUpdated }: EditShipmentButtonPr
                     value={leg.requiredAction ?? ""}
                     onChange={(event) => updateLeg(index, { requiredAction: event.target.value })}
                   />
-                </div>
+                </div> */}
               </div>
             ))}
             <Button type="button" variant="secondary" size="sm" onClick={addLeg}>

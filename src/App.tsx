@@ -49,7 +49,6 @@ const App = () => {
               }
             />
 
-
             {/* Protected routes (Dashboard Layout) */}
             <Route
               path="/"
@@ -59,8 +58,6 @@ const App = () => {
                 </AuthGuard>
               }
             >
-
-
               {/* 🔹 Role-based routes */}
 
               {/* 🧩 ADMIN */}
@@ -78,12 +75,11 @@ const App = () => {
                   <Route path="register" element={<Register />} />
                   <Route path="products/create" element={<CreateProduct />} />
                   <Route path="products/:id" element={<ProductDetail />} />
-                  <Route path="handover" element={<Handover />} />
+                  <Route path="shipment" element={<Handover />} />
                   <Route path="alerts" element={<Alerts />} />
                   <Route path="analytics" element={<Analytics />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
-
                 </>
               )}
 
@@ -92,11 +88,10 @@ const App = () => {
                 <>
                   <Route index element={<Index />} />
                   <Route path="register" element={<Register />} />
-                  <Route path="handover" element={<Handover />} />
+                  <Route path="shipment" element={<Handover />} />
                   <Route path="products" element={<Products />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
-
                 </>
               )}
 
@@ -107,10 +102,9 @@ const App = () => {
                   <Route path="register" element={<Register />} />
                   {/* <Route path="inventory" element={<Inventory />} /> */}
                   <Route path="checkpoints" element={<Checkpoints />} />
-                  <Route path="handover" element={<Handover />} />
+                  <Route path="shipment" element={<Handover />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
-
                 </>
               )}
 
@@ -121,7 +115,6 @@ const App = () => {
                   <Route path="register" element={<Register />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
                   <Route path="qr-scan" element={<QRScannerPage />} />
-
                 </>
               )}
 

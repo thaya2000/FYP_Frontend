@@ -119,7 +119,9 @@ const ManufacturerDashboard = ({
   shipments,
   navigate,
 }: ManufacturerDashboardProps) => {
-  const activeAlerts = alerts.filter((alert) => !alert.acknowledged).slice(0, 4);
+  const activeAlerts = alerts
+    .filter((alert) => !alert.acknowledged)
+    .slice(0, 4);
   const liveShipments = shipments.slice(0, 3);
 
   return (
@@ -128,7 +130,10 @@ const ManufacturerDashboard = ({
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.6),_transparent_55%)]" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-4">
-            <Badge variant="outline" className="w-fit border-primary/30 text-primary">
+            <Badge
+              variant="outline"
+              className="w-fit border-primary/30 text-primary"
+            >
               Manufacturer dashboard
             </Badge>
             <div>
@@ -136,7 +141,8 @@ const ManufacturerDashboard = ({
                 Keep every shipment compliant and on schedule
               </h1>
               <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-                Monitor live cold-chain activities, quickly respond to alerts, and share updates with partners in real time.
+                Monitor live cold-chain activities, quickly respond to alerts,
+                and share updates with partners in real time.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -160,12 +166,16 @@ const ManufacturerDashboard = ({
                   <p className="text-sm text-muted-foreground">On-time rate</p>
                   <p className="text-3xl font-semibold">96%</p>
                 </div>
-                <Badge className="bg-primary/10 text-primary">+4% vs last week</Badge>
+                <Badge className="bg-primary/10 text-primary">
+                  +4% vs last week
+                </Badge>
               </div>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-2 text-foreground">
                   <Clock className="h-4 w-4 text-primary" />
-                  <span>{liveShipments.length} shipments approaching checkpoints</span>
+                  <span>
+                    {liveShipments.length} shipments approaching checkpoints
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 text-foreground">
                   <Activity className="h-4 w-4 text-secondary" />
@@ -200,7 +210,9 @@ const ManufacturerDashboard = ({
                 >
                   <div className="flex items-center justify-between text-sm">
                     <div className="font-semibold">{shipment.id}</div>
-                    <Badge variant="outline">{shipment.status.replace(/_/g, " ").toLowerCase()}</Badge>
+                    <Badge variant="outline">
+                      {shipment.status.replace(/_/g, " ").toLowerCase()}
+                    </Badge>
                   </div>
                   <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                     <MapPin className="h-3.5 w-3.5 text-primary" />
@@ -227,7 +239,9 @@ const ManufacturerDashboard = ({
           </CardHeader>
           <CardContent className="space-y-3">
             {activeAlerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No open alerts right now.</p>
+              <p className="text-sm text-muted-foreground">
+                No open alerts right now.
+              </p>
             ) : (
               activeAlerts.map((alert) => (
                 <div
@@ -267,7 +281,8 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
   const supplier = useSupplierContext();
   const [selectedCountry, setSelectedCountry] = useState("ALL");
   const [selectedState, setSelectedState] = useState("ALL");
-  const [quickAcceptTarget, setQuickAcceptTarget] = useState<SupplierShipmentRecord | null>(null);
+  const [quickAcceptTarget, setQuickAcceptTarget] =
+    useState<SupplierShipmentRecord | null>(null);
 
   const getSegmentReference = (shipment: SupplierShipmentRecord) =>
     shipment.segmentId ?? shipment.id;
@@ -311,7 +326,7 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
         iconTone: "text-emerald-600",
       },
     ],
-    [supplier.shipmentsByStatus],
+    [supplier.shipmentsByStatus]
   );
 
   const pendingShipments = supplier.shipmentsByStatus.PENDING ?? [];
@@ -333,7 +348,7 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
         Array.from(countries.entries()).map(([country, states]) => [
           country,
           Array.from(states).sort(),
-        ]),
+        ])
       ),
     };
   }, [pendingShipments]);
@@ -342,15 +357,18 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
     selectedCountry === "ALL"
       ? Array.from(
         new Set(
-          pendingShipments.map((shipment) => deriveShipmentLocation(shipment).state ?? "Unknown"),
-        ),
+          pendingShipments.map(
+            (shipment) => deriveShipmentLocation(shipment).state ?? "Unknown"
+          )
+        )
       ).sort()
       : locationMetadata.statesByCountry.get(selectedCountry) ?? [];
 
   const quickAcceptMatches = useMemo(() => {
     return pendingShipments.filter((shipment) => {
       const { country, state } = deriveShipmentLocation(shipment);
-      const countryOk = selectedCountry === "ALL" || country === selectedCountry;
+      const countryOk =
+        selectedCountry === "ALL" || country === selectedCountry;
       const stateOk = selectedState === "ALL" || state === selectedState;
       return countryOk && stateOk;
     });
@@ -369,16 +387,11 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
       if (!quickAcceptTarget) return;
 
       supplier.acceptShipment(String(getSegmentReference(quickAcceptTarget)));
-
     } catch (error) {
       console.error("Error in handleQuickAccept:", error);
     }
     setQuickAcceptTarget(null);
   };
-
-
-
-
 
   const activeAlerts = alerts.filter((alert) => !alert.acknowledged);
 
@@ -395,7 +408,10 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
       <div className="rounded-3xl border border-border/60 bg-gradient-to-br from-secondary/10 via-background to-background p-6 sm:p-10 shadow-card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
-            <Badge variant="outline" className="w-fit border-secondary/40 text-secondary">
+            <Badge
+              variant="outline"
+              className="w-fit border-secondary/40 text-secondary"
+            >
               Supplier dashboard
             </Badge>
             <div>
@@ -403,13 +419,13 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
                 Accept, track, and hand over consignments faster
               </h1>
               <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-                Monitor consignments requiring acceptance, keep an eye on movements, and stay ahead of
-                alerts.
+                Monitor consignments requiring acceptance, keep an eye on
+                movements, and stay ahead of alerts.
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="gap-2" onClick={() => navigate("/handover")}>
+            <Button className="gap-2" onClick={() => navigate("/shipment")}>
               Open handovers <ArrowUpRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" onClick={() => navigate("/qr-scan")}>
@@ -430,7 +446,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
               <CardContent className="flex items-center justify-between gap-4 p-4">
                 <div>
                   <p className="text-sm text-muted-foreground">{card.title}</p>
-                  <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+                  <p className="text-2xl font-semibold text-foreground">
+                    {card.value}
+                  </p>
                 </div>
                 <span className="rounded-2xl bg-background/70 p-3 shadow-inner">
                   <Icon className={`h-5 w-5 ${card.iconTone}`} />
@@ -445,13 +463,18 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
         <CardContent className="space-y-6 p-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Quick acceptance</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Quick acceptance
+              </p>
               <p className="text-lg font-semibold text-foreground">
                 Locate consignments and accept in one step
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+              <Select
+                value={selectedCountry}
+                onValueChange={setSelectedCountry}
+              >
                 <SelectTrigger className="w-56">
                   <SelectValue placeholder="Choose country" />
                 </SelectTrigger>
@@ -465,7 +488,10 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
                 </SelectContent>
               </Select>
               <Select value={selectedState} onValueChange={setSelectedState}>
-                <SelectTrigger className="w-56" disabled={stateOptions.length === 0}>
+                <SelectTrigger
+                  className="w-56"
+                  disabled={stateOptions.length === 0}
+                >
                   <SelectValue placeholder="All states" />
                 </SelectTrigger>
                 <SelectContent>
@@ -489,7 +515,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
               {quickAcceptMatches.slice(0, 4).map((shipment) => {
                 const location = deriveShipmentLocation(shipment);
                 const etaText = shipment.expectedArrival
-                  ? formatDistanceToNow(new Date(shipment.expectedArrival), { addSuffix: true })
+                  ? formatDistanceToNow(new Date(shipment.expectedArrival), {
+                    addSuffix: true,
+                  })
                   : "ETA unavailable";
                 const segmentIdentifier = getSegmentReference(shipment);
                 return (
@@ -502,7 +530,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
                         <p className="font-semibold text-foreground">
                           {shipment.destinationPartyName ?? "Consignment"}
                         </p>
-                        <p className="text-xs text-muted-foreground">Segment {segmentIdentifier}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Segment {segmentIdentifier}
+                        </p>
                       </div>
                       <Badge variant="outline">{etaText}</Badge>
                     </div>
@@ -542,7 +572,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Accept consignment</DialogTitle>
-            <DialogDescription>Verify the details and confirm acceptance.</DialogDescription>
+            <DialogDescription>
+              Verify the details and confirm acceptance.
+            </DialogDescription>
           </DialogHeader>
           {quickAcceptTarget ? (
             <div className="space-y-4 py-2 text-sm">
@@ -556,7 +588,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">From</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    From
+                  </p>
                   <p className="font-medium text-foreground">
                     {quickAcceptTarget.pickupArea ??
                       quickAcceptTarget.originArea ??
@@ -564,7 +598,9 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">To</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    To
+                  </p>
                   <p className="font-medium text-foreground">
                     {quickAcceptTarget.dropoffArea ??
                       quickAcceptTarget.destinationArea ??
@@ -578,7 +614,10 @@ const SupplierDashboard = ({ alerts, navigate }: SupplierDashboardProps) => {
             <Button variant="ghost" onClick={() => setQuickAcceptTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={handleQuickAccept} disabled={!quickAcceptTarget || quickAcceptBusy}>
+            <Button
+              onClick={handleQuickAccept}
+              disabled={!quickAcceptTarget || quickAcceptBusy}
+            >
               {quickAcceptBusy ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -612,14 +651,18 @@ const deriveShipmentLocation = (shipment: SupplierShipmentRecord) => {
   const start = shipment.startCheckpoint ?? {};
   const end = shipment.endCheckpoint ?? {};
   const pickup = parseAreaTokens(shipment.pickupArea ?? shipment.originArea);
-  const dropoff = parseAreaTokens(shipment.dropoffArea ?? shipment.destinationArea);
+  const dropoff = parseAreaTokens(
+    shipment.dropoffArea ?? shipment.destinationArea
+  );
   const country =
-    start.country ?? end.country ?? dropoff.country ?? pickup.country ?? "Unknown";
-  const state = start.state ?? end.state ?? dropoff.state ?? pickup.state ?? "Unknown";
+    start.country ??
+    end.country ??
+    dropoff.country ??
+    pickup.country ??
+    "Unknown";
+  const state =
+    start.state ?? end.state ?? dropoff.state ?? pickup.state ?? "Unknown";
   return { country, state };
 };
 
 export default Index;
-
-
-

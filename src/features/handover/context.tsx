@@ -1,16 +1,29 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import {
   useMutation,
   useQueries,
   useQuery,
+  useInfiniteQuery,
   useQueryClient,
   type UseQueryOptions,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store";
-import { checkpointService, type Checkpoint } from "@/services/checkpointService";
+import {
+  checkpointService,
+  type Checkpoint,
+} from "@/services/checkpointService";
 import { shipmentService } from "@/services/shipmentService";
-import { packageService, type PackageResponse } from "@/services/packageService";
+import {
+  packageService,
+  type PackageResponse,
+} from "@/services/packageService";
 import {
   deriveRouteLabel,
   extractShipmentItems,
@@ -45,11 +58,14 @@ type ManufacturerContextValue = {
   setCreateOpen: (open: boolean) => void;
   handleCreateShipment: (event: React.FormEvent<HTMLFormElement>) => void;
   creatingShipment: boolean;
-  myShipments: ManufacturerShipmentRecord[];
-  loadingMyShipments: boolean;
+  getShipmentsForStatus: (status: string) => {
+    data: ManufacturerShipmentRecord[];
+    isLoading: boolean;
+    fetchNextPage: () => void;
+    hasNextPage: boolean;
+    isFetchingNextPage: boolean;
+  };
   onShipmentsUpdated: () => void;
-  checkpoints: Checkpoint[];
-  loadingCheckpoints: boolean;
 };
 
 type SupplierContextValue = {
@@ -61,22 +77,26 @@ type SupplierContextValue = {
   statusOrder: SupplierShipmentStatus[];
   areaQuery: string;
   setAreaQuery: (value: string) => void;
-  filterShipmentsByArea: (shipments: SupplierShipmentRecord[]) => SupplierShipmentRecord[];
+  filterShipmentsByArea: (
+    shipments: SupplierShipmentRecord[]
+  ) => SupplierShipmentRecord[];
   acceptingShipmentId: string | null;
   acceptShipment: (id: string) => void;
   acceptShipmentPending: boolean;
-    takeoverSegmentId: string | null;
-    takeoverPending: boolean;
-    takeoverSegment: (
-      segmentId: string,
-      coords: { latitude: number; longitude: number },
-    ) => Promise<unknown>;
+  takeoverSegmentId: string | null;
+  takeoverPending: boolean;
+  takeoverSegment: (
+    segmentId: string,
+    coords: { latitude: number; longitude: number }
+  ) => Promise<unknown>;
   handoverDialogOpen: boolean;
   setHandoverDialogOpen: (open: boolean) => void;
   handoverTarget: SupplierShipmentRecord | null;
   setHandoverTarget: (shipment: SupplierShipmentRecord | null) => void;
   handoverForm: HandoverFormState;
-  setHandoverForm: (updater: (prev: HandoverFormState) => HandoverFormState) => void;
+  setHandoverForm: (
+    updater: (prev: HandoverFormState) => HandoverFormState
+  ) => void;
   handoverLoading: boolean;
   submitHandover: () => Promise<void>;
   resetHandoverForm: () => void;
@@ -129,7 +149,10 @@ const SUPPLIER_STATUS_ORDER: SupplierShipmentStatus[] = [
   "CANCELLED",
 ];
 
-type SupplierStatusBuckets = Record<SupplierShipmentStatus, SupplierShipmentRecord[]>;
+type SupplierStatusBuckets = Record<
+  SupplierShipmentStatus,
+  SupplierShipmentRecord[]
+>;
 
 const createStatusBuckets = (): SupplierStatusBuckets =>
   SUPPLIER_STATUS_ORDER.reduce((acc, status) => {
@@ -137,7 +160,9 @@ const createStatusBuckets = (): SupplierStatusBuckets =>
     return acc;
   }, {} as SupplierStatusBuckets);
 
-const mapSegmentStatusToSupplierTab = (status?: string | null): SupplierShipmentStatus => {
+const mapSegmentStatusToSupplierTab = (
+  status?: string | null
+): SupplierShipmentStatus => {
   const normalized = normalizeStatus(status);
   switch (normalized) {
     case "PENDING":
@@ -167,7 +192,11 @@ const mapSegmentStatusToSupplierTab = (status?: string | null): SupplierShipment
 };
 
 const formatCheckpointLabel = (
-  checkpoint?: { state?: string | null; country?: string | null; name?: string | null } | null,
+  checkpoint?: {
+    state?: string | null;
+    country?: string | null;
+    name?: string | null;
+  } | null
 ) => {
   if (!checkpoint) return undefined;
   const parts = [checkpoint.state, checkpoint.country]
@@ -176,7 +205,8 @@ const formatCheckpointLabel = (
   if (parts.length > 0) {
     return parts.join(", ");
   }
-  const fallback = typeof checkpoint.name === "string" ? checkpoint.name.trim() : "";
+  const fallback =
+    typeof checkpoint.name === "string" ? checkpoint.name.trim() : "";
   return fallback.length > 0 ? fallback : undefined;
 };
 
@@ -234,7 +264,9 @@ type ShipmentSegmentResponse = {
   [key: string]: unknown;
 };
 
-const mapSegmentStatusToSupplierStatus = (status?: string | null): SupplierShipmentStatus => {
+const mapSegmentStatusToSupplierStatus = (
+  status?: string | null
+): SupplierShipmentStatus => {
   if (typeof status !== "string") return "PENDING";
   const normalized = status.trim().toUpperCase();
   if (!normalized) return "PENDING";
@@ -267,13 +299,19 @@ const mapSegmentStatusToSupplierStatus = (status?: string | null): SupplierShipm
   }
 };
 
-const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierShipmentRecord => {
+const segmentToSupplierShipment = (
+  segment: ShipmentSegmentResponse
+): SupplierShipmentRecord => {
   const derivedId =
     segment.shipmentId && segment.segmentOrder !== undefined
       ? `${segment.shipmentId}-${segment.segmentOrder}`
       : segment.shipmentId ?? undefined;
   const idCandidate =
-    segment.segmentId ?? segment.id ?? segment.segmentHash ?? derivedId ?? "unknown-segment";
+    segment.segmentId ??
+    segment.id ??
+    segment.segmentHash ??
+    derivedId ??
+    "unknown-segment";
 
   const expectedArrival =
     segment.estimatedArrivalDate ??
@@ -283,7 +321,8 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
     undefined;
 
   const acceptedAt = segment.acceptedAt ?? segment.accepted_at ?? undefined;
-  const handedOverAt = segment.handedOverAt ?? segment.handed_over_at ?? undefined;
+  const handedOverAt =
+    segment.handedOverAt ?? segment.handed_over_at ?? undefined;
   const startCheckpointLabel = formatCheckpointLabel(segment.startCheckpoint);
   const endCheckpointLabel = formatCheckpointLabel(segment.endCheckpoint);
   const consumerName =
@@ -309,8 +348,8 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
     Array.isArray(segment.items) && segment.items.length > 0
       ? segment.items
       : Array.isArray(segment.shipmentItems) && segment.shipmentItems.length > 0
-        ? segment.shipmentItems
-        : [];
+      ? segment.shipmentItems
+      : [];
 
   const areaTokens = new Set<string>();
   [
@@ -336,7 +375,8 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
     handedOverAt,
     manufacturerName: segment.manufacturerLegalName ?? undefined,
     consumerName,
-    destinationPartyName: segment.shipment?.destinationPartyName ?? consumerName ?? undefined,
+    destinationPartyName:
+      segment.shipment?.destinationPartyName ?? consumerName ?? undefined,
     destinationPartyUUID: segment.shipment?.destinationPartyUUID ?? undefined,
     fromUUID: segment.manufacturerUuid ?? undefined,
     originArea,
@@ -347,10 +387,13 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
     destinationCheckpoint: endCheckpointLabel ?? segment.endName ?? undefined,
     shipmentItems: resolvedItems,
     items: resolvedItems,
-    checkpoints: Array.isArray(segment.checkpoints) ? segment.checkpoints : undefined,
+    checkpoints: Array.isArray(segment.checkpoints)
+      ? segment.checkpoints
+      : undefined,
     segmentOrder: segment.segmentOrder,
     shipmentId: segment.shipmentId,
-    expectedShipDate: segment.expectedShipDate ?? segment.expected_ship_date ?? undefined,
+    expectedShipDate:
+      segment.expectedShipDate ?? segment.expected_ship_date ?? undefined,
     timeTolerance: segment.timeTolerance ?? segment.time_tolerance ?? undefined,
     startCheckpoint: segment.startCheckpoint ?? undefined,
     endCheckpoint: segment.endCheckpoint ?? undefined,
@@ -358,18 +401,13 @@ const segmentToSupplierShipment = (segment: ShipmentSegmentResponse): SupplierSh
   };
 };
 
-export const HandoverProvider = ({ children }: { children: React.ReactNode }) => {
+export const HandoverProvider = ({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
   const { role, uuid, user } = useAppStore();
   const queryClient = useQueryClient();
-
-  const { data: checkpoints = [], isLoading: loadingCheckpoints } = useQuery({
-    queryKey: ["checkpoints", role, uuid],
-    queryFn: () =>
-      role === "MANUFACTURER"
-        ? checkpointService.getAll({ type: "MANUFACTURER" })
-        : checkpointService.getByOwner(uuid ?? ""),
-    enabled: Boolean(uuid),
-  });
 
   const { data: incoming = [], isLoading: loadingIncoming } = useQuery<
     ShipmentSegmentResponse[],
@@ -387,7 +425,8 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
       queryKey: ["supplierSegments", uuid, status] as const,
       queryFn: () => shipmentService.getSupplierSegments({ status }),
       enabled: Boolean(uuid) && (role === "SUPPLIER" || role === "WAREHOUSE"),
-      select: (segments: ShipmentSegmentResponse[]) => segments.map(segmentToSupplierShipment),
+      select: (segments: ShipmentSegmentResponse[]) =>
+        segments.map(segmentToSupplierShipment),
     })) satisfies UseQueryOptions<
       ShipmentSegmentResponse[],
       Error,
@@ -395,25 +434,74 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     >[],
   });
 
-  const { data: myShipments = [], isLoading: loadingMyShipments } = useQuery<ManufacturerShipmentRecord[]>({
+  const {
+    data,
+    isLoading: loadingMyShipments,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["myShipments", uuid],
-    queryFn: () => shipmentService.getByManufacturer(uuid ?? ""),
+    queryFn: ({ pageParam }) =>
+      shipmentService.getByManufacturer(uuid ?? "", {
+        cursor: pageParam,
+        limit: 20,
+      }),
+    getNextPageParam: (lastPage) => lastPage.cursor || undefined,
+    initialPageParam: undefined as string | undefined,
     enabled: Boolean(uuid) && role === "MANUFACTURER",
   });
+
+  // Function to get shipments for a specific status with pagination
+  const getShipmentsForStatus = useCallback(
+    (status: string) => {
+      const statusQuery = useInfiniteQuery({
+        queryKey: ["myShipments", uuid, status],
+        queryFn: ({ pageParam }) =>
+          shipmentService.getByManufacturer(uuid ?? "", {
+            status,
+            cursor: pageParam,
+            limit: 20,
+          }),
+        getNextPageParam: (lastPage) => lastPage.cursor || undefined,
+        initialPageParam: undefined as string | undefined,
+        enabled: Boolean(uuid) && role === "MANUFACTURER",
+      });
+
+      const shipments = useMemo(() => {
+        if (!statusQuery.data?.pages) return [];
+        return statusQuery.data.pages.flatMap((page) => page.shipments || []);
+      }, [statusQuery.data]);
+
+      return {
+        data: shipments,
+        isLoading: statusQuery.isLoading,
+        fetchNextPage: statusQuery.fetchNextPage,
+        hasNextPage: statusQuery.hasNextPage ?? false,
+        isFetchingNextPage: statusQuery.isFetchingNextPage,
+      };
+    },
+    [uuid, role]
+  );
 
   const [selectedPackageIds, setSelectedPackageIds] = useState<string[]>([]);
   const [destUUID, setDestUUID] = useState("");
   const [legs, setLegs] = useState<ShipmentLegInput[]>([DEFAULT_LEG]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [acceptingShipmentId, setAcceptingShipmentId] = useState<string | null>(null);
+  const [acceptingShipmentId, setAcceptingShipmentId] = useState<string | null>(
+    null
+  );
   const [handoverDialogOpen, setHandoverDialogOpen] = useState(false);
-  const [handoverTarget, setHandoverTarget] = useState<SupplierShipmentRecord | null>(null);
+  const [handoverTarget, setHandoverTarget] =
+    useState<SupplierShipmentRecord | null>(null);
   const [handoverForm, setHandoverFormState] = useState<HandoverFormState>({
     latitude: "",
     longitude: "",
   });
   const [handoverLoading, setHandoverLoading] = useState(false);
-  const [takeoverSegmentId, setTakeoverSegmentId] = useState<string | null>(null);
+  const [takeoverSegmentId, setTakeoverSegmentId] = useState<string | null>(
+    null
+  );
   const [areaQuery, setAreaQuery] = useState("");
 
   const {
@@ -433,20 +521,26 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     });
   }, [manufacturerPackages]);
 
-  const resetPackageSelections = useCallback(() => setSelectedPackageIds([]), []);
+  const resetPackageSelections = useCallback(
+    () => setSelectedPackageIds([]),
+    []
+  );
 
-  const togglePackageSelection = useCallback((packageId: string, selected: boolean) => {
-    setSelectedPackageIds((prev) => {
-      const set = new Set(prev.map(String));
-      const normalizedId = String(packageId);
-      if (selected) {
-        set.add(normalizedId);
-      } else {
-        set.delete(normalizedId);
-      }
-      return Array.from(set);
-    });
-  }, []);
+  const togglePackageSelection = useCallback(
+    (packageId: string, selected: boolean) => {
+      setSelectedPackageIds((prev) => {
+        const set = new Set(prev.map(String));
+        const normalizedId = String(packageId);
+        if (selected) {
+          set.add(normalizedId);
+        } else {
+          set.delete(normalizedId);
+        }
+        return Array.from(set);
+      });
+    },
+    []
+  );
 
   const addLeg = useCallback(() => {
     setLegs((prev) => [...prev, { ...DEFAULT_LEG }]);
@@ -469,10 +563,12 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     onError: (error: unknown) => {
       const message =
         typeof error === "object" &&
-          error !== null &&
-          "response" in error &&
-          typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === "string"
-          ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { error?: string } } }).response
+          ?.data?.error === "string"
+          ? (error as { response?: { data?: { error?: string } } }).response
+              ?.data?.error
           : undefined;
       toast.error(message || "Failed to create shipment");
     },
@@ -485,8 +581,11 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
       const knownPackageIds = new Set(
         manufacturerPackages
           .map((pkg) => pkg.package_uuid ?? pkg.id)
-          .filter((value): value is string | number => value !== undefined && value !== null)
-          .map((value) => String(value)),
+          .filter(
+            (value): value is string | number =>
+              value !== undefined && value !== null
+          )
+          .map((value) => String(value))
       );
 
       const shipmentItems = selectedPackageIds
@@ -533,7 +632,9 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
           time_tolerance: leg.timeTolerance || undefined,
           expected_ship_date: toISO(leg.expectedShip),
           segment_order: index + 1,
-          ...(leg.requiredAction ? { required_action: leg.requiredAction } : {}),
+          ...(leg.requiredAction
+            ? { required_action: leg.requiredAction }
+            : {}),
         }));
 
       if (checkpointsPayload.length === 0) {
@@ -548,7 +649,14 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
         checkpoints: checkpointsPayload,
       });
     },
-    [createShipment, destUUID, legs, selectedPackageIds, uuid, manufacturerPackages],
+    [
+      createShipment,
+      destUUID,
+      legs,
+      selectedPackageIds,
+      uuid,
+      manufacturerPackages,
+    ]
   );
 
   const acceptShipment = useMutation({
@@ -560,18 +668,21 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
       toast.success("Shipment accepted");
       queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
       SUPPLIER_STATUS_ORDER.forEach((status) =>
-        queryClient.invalidateQueries({ queryKey: ["supplierSegments", uuid, status] }),
+        queryClient.invalidateQueries({
+          queryKey: ["supplierSegments", uuid, status],
+        })
       );
     },
     onError: (error: unknown) => {
-      const message = (
+      const message =
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
-        typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === "string"
-      )
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+        typeof (error as { response?: { data?: { error?: string } } }).response
+          ?.data?.error === "string"
+          ? (error as { response?: { data?: { error?: string } } }).response
+              ?.data?.error
+          : undefined;
       toast.error(message || "Failed to accept shipment");
     },
     onSettled: () => {
@@ -588,7 +699,9 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     onSuccess: () => {
       toast.success("Segment taken over");
       SUPPLIER_STATUS_ORDER.forEach((status) =>
-        queryClient.invalidateQueries({ queryKey: ["supplierSegments", uuid, status] }),
+        queryClient.invalidateQueries({
+          queryKey: ["supplierSegments", uuid, status],
+        })
       );
     },
     onError: (error: unknown) => {
@@ -596,8 +709,10 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
-        typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === "string"
-          ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        typeof (error as { response?: { data?: { error?: string } } }).response
+          ?.data?.error === "string"
+          ? (error as { response?: { data?: { error?: string } } }).response
+              ?.data?.error
           : undefined;
       toast.error(message || "Failed to take over segment");
     },
@@ -634,14 +749,19 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
 
     setHandoverLoading(true);
     try {
-      await shipmentService.handover(String(segmentIdentifier), { latitude, longitude });
+      await shipmentService.handover(String(segmentIdentifier), {
+        latitude,
+        longitude,
+      });
       toast.success("Handover completed.");
       setHandoverDialogOpen(false);
       setHandoverTarget(null);
       resetHandoverForm();
       queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
       SUPPLIER_STATUS_ORDER.forEach((status) =>
-        queryClient.invalidateQueries({ queryKey: ["supplierSegments", uuid, status] }),
+        queryClient.invalidateQueries({
+          queryKey: ["supplierSegments", uuid, status],
+        })
       );
     } catch (error) {
       console.error(error);
@@ -649,8 +769,10 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
-        typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === "string"
-          ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        typeof (error as { response?: { data?: { error?: string } } }).response
+          ?.data?.error === "string"
+          ? (error as { response?: { data?: { error?: string } } }).response
+              ?.data?.error
           : undefined;
       toast.error(message || "Failed to submit handover details.");
     } finally {
@@ -670,7 +792,9 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
   const loadingByStatus = useMemo(() => {
     return SUPPLIER_STATUS_ORDER.reduce((acc, status, index) => {
       const query = supplierSegmentsQueries[index];
-      acc[status] = Boolean(query?.isLoading || query?.isFetching || query?.isPending);
+      acc[status] = Boolean(
+        query?.isLoading || query?.isFetching || query?.isPending
+      );
       return acc;
     }, {} as Record<SupplierShipmentStatus, boolean>);
   }, [supplierSegmentsQueries]);
@@ -684,7 +808,7 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
         return areas.some((area) => area.toLowerCase().includes(term));
       });
     },
-    [areaQuery],
+    [areaQuery]
   );
 
   const recentHandovers = useMemo(() => [], []);
@@ -706,11 +830,9 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     setCreateOpen,
     handleCreateShipment,
     creatingShipment: createShipment.isPending,
-    myShipments,
-    loadingMyShipments,
-    onShipmentsUpdated: () => queryClient.invalidateQueries({ queryKey: ["myShipments"] }),
-    checkpoints,
-    loadingCheckpoints,
+    getShipmentsForStatus,
+    onShipmentsUpdated: () =>
+      queryClient.invalidateQueries({ queryKey: ["myShipments"] }),
   };
 
   const supplier: SupplierContextValue = {
@@ -728,14 +850,17 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     acceptShipmentPending: acceptShipment.isPending,
     takeoverSegmentId,
     takeoverPending: takeoverSegmentMutation.isPending,
-    takeoverSegment: (segmentId: string, coords: { latitude: number; longitude: number }) =>
-      takeoverSegmentMutation.mutateAsync({ segmentId, ...coords }),
+    takeoverSegment: (
+      segmentId: string,
+      coords: { latitude: number; longitude: number }
+    ) => takeoverSegmentMutation.mutateAsync({ segmentId, ...coords }),
     handoverDialogOpen,
     setHandoverDialogOpen,
     handoverTarget,
     setHandoverTarget,
     handoverForm,
-    setHandoverForm: (updater) => setHandoverFormState((prev) => updater({ ...prev })),
+    setHandoverForm: (updater) =>
+      setHandoverFormState((prev) => updater({ ...prev })),
     handoverLoading,
     submitHandover,
     resetHandoverForm,
@@ -753,13 +878,19 @@ export const HandoverProvider = ({ children }: { children: React.ReactNode }) =>
     shared,
   };
 
-  return <HandoverContext.Provider value={value}>{children}</HandoverContext.Provider>;
+  return (
+    <HandoverContext.Provider value={value}>
+      {children}
+    </HandoverContext.Provider>
+  );
 };
 
 export const useHandoverContext = () => {
   const context = useContext(HandoverContext);
   if (!context) {
-    throw new Error("useHandoverContext must be used within a HandoverProvider");
+    throw new Error(
+      "useHandoverContext must be used within a HandoverProvider"
+    );
   }
   return context;
 };

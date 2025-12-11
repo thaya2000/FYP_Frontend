@@ -86,7 +86,7 @@ export function Sidebar({
           },
           { path: "/qr-scan", label: "QR Scanner", icon: QrCode },
           // { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
-          { path: "/handover", label: "Shipments", icon: Truck },
+          { path: "/shipment", label: "Shipments", icon: Truck },
           // { path: "/analytics", label: "Analytics", icon: BarChart3 },
           { path: "/settings", label: "Settings", icon: Settings },
           // { path: "/register", label: "Register", icon: UserPlus },
@@ -96,7 +96,7 @@ export function Sidebar({
         return [
           { path: "/", label: "Dashboard", icon: LayoutDashboard },
           // { path: "/checkpoints", label: "Checkpoints", icon: MapPin },
-          { path: "/handover", label: "Shipments", icon: Truck },
+          { path: "/shipment", label: "Shipments", icon: Truck },
           { path: "/settings", label: "Settings", icon: Settings },
           // { path: "/register", label: "Register", icon: UserPlus },
         ];
@@ -145,14 +145,10 @@ export function Sidebar({
     <div
       className={cn(
         "bg-card border-r shadow-md flex flex-col transition-all duration-300",
-        isMobile 
+        isMobile
           ? "fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 z-50" // Mobile: Full-width overlay
           : "fixed left-0 top-16 h-[calc(100vh-4rem)]", // Desktop: Fixed sidebar
-        isMobile 
-          ? "" 
-          : collapsed 
-            ? "w-20" 
-            : "w-64",
+        isMobile ? "" : collapsed ? "w-20" : "w-64",
         className
       )}
     >
@@ -170,7 +166,11 @@ export function Sidebar({
             onClick={() => setCollapsed && setCollapsed(!collapsed)}
             className="hover:bg-muted"
           >
-            {collapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
+            {collapsed ? (
+              <Menu className="w-5 h-5" />
+            ) : (
+              <X className="w-5 h-5" />
+            )}
           </Button>
         )}
         {isMobile && (
@@ -218,7 +218,9 @@ export function Sidebar({
                   )}
                 >
                   <item.icon className="w-4 h-4 shrink-0" />
-                  {(!collapsed || isMobile) && <span className="truncate">{item.label}</span>}
+                  {(!collapsed || isMobile) && (
+                    <span className="truncate">{item.label}</span>
+                  )}
                   {(!collapsed || isMobile) && (
                     <ChevronDown
                       className={cn(
@@ -277,13 +279,14 @@ export function Sidebar({
                 )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                {(!collapsed || isMobile) && <span className="truncate">{item.label}</span>}
+                {(!collapsed || isMobile) && (
+                  <span className="truncate">{item.label}</span>
+                )}
               </Button>
             );
           }
         })}
       </div>
-
     </div>
   );
 }

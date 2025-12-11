@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/lib/store";
 import { useNavigate } from "react-router-dom";
 import { useDisconnect } from "wagmi";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -66,14 +67,16 @@ export function Header({ onMenuClick, isMobile = false }: HeaderProps) {
               <Menu className="w-5 h-5" />
             </Button>
           )}
-          
+
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-primary flex items-center justify-center">
               <Package className="w-4 h-4 md:w-5 md:h-5 text-white" />
             </div>
             <div>
               <h1 className="text-base md:text-xl font-bold">TrackChain</h1>
-              <p className="text-[10px] md:text-xs text-muted-foreground hidden sm:block">Supply Chain DApp</p>
+              <p className="text-[10px] md:text-xs text-muted-foreground hidden sm:block">
+                Supply Chain DApp
+              </p>
             </div>
           </div>
         </div>
@@ -90,17 +93,8 @@ export function Header({ onMenuClick, isMobile = false }: HeaderProps) {
             </div>
           )}
 
-          <Button variant="ghost" size={isMobile ? "icon" : "sm"} className="relative">
-            <Bell className="w-4 h-4" />
-            {unreadAlertsCount > 0 && (
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 p-0 flex items-center justify-center text-[10px] md:text-xs"
-              >
-                {unreadAlertsCount}
-              </Badge>
-            )}
-          </Button>
+          {/* Real-time Notifications */}
+          <NotificationBell />
 
           {!isMobile && (
             <Button variant="ghost" size="sm">
