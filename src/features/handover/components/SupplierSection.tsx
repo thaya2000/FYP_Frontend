@@ -297,6 +297,7 @@ export function SupplierSection() {
 
   const actionContext: SupplierActionContext = {
     supplier,
+    sharedUuid: shared.uuid,
     openHandoverDialog,
     openTakeoverDialog,
     handleDownloadProof,
@@ -543,6 +544,7 @@ const SupplierStatusPanels = ({
 
 type SupplierActionContext = {
   supplier: ReturnType<typeof useSupplierContext>;
+  sharedUuid?: string | null;
   openHandoverDialog: (shipment: SupplierShipmentRecord) => void;
   openTakeoverDialog: (shipment: SupplierShipmentRecord) => void;
   handleDownloadProof: (shipment: SupplierShipmentRecord) => void;
@@ -566,6 +568,7 @@ const SupplierShipmentActions = ({
 }: SupplierShipmentActionsProps) => {
   const {
     supplier,
+    sharedUuid,
     openHandoverDialog,
     openTakeoverDialog,
     handleDownloadProof,
@@ -659,12 +662,28 @@ const SupplierShipmentActions = ({
           .accept(String(segmentIdentifier))
           .then(() => {
             toast.success("Shipment accepted");
-            queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
-            supplier.statusOrder.forEach((status) =>
+            if (sharedUuid) {
               queryClient.invalidateQueries({
-                queryKey: ["supplierSegments", supplier.uuid, status],
-              })
-            );
+                queryKey: ["incomingShipments", sharedUuid],
+              });
+              supplier.statusOrder.forEach((status) =>
+                queryClient.invalidateQueries({
+                  queryKey: ["supplierSegments", sharedUuid, status],
+                })
+              );
+              // Force the active tab to refetch so the card disappears immediately
+              queryClient.refetchQueries({
+                queryKey: [
+                  "supplierSegments",
+                  sharedUuid,
+                  supplier.activeStatus,
+                ],
+                type: "active",
+              });
+            } else {
+              queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
+              queryClient.invalidateQueries({ queryKey: ["supplierSegments"] });
+            }
             setAcceptDialogSegmentId(null);
           })
           .catch((error) => {
@@ -677,11 +696,12 @@ const SupplierShipmentActions = ({
                 .response?.data?.error === "string"
                 ? (error as { response?: { data?: { error?: string } } })
                     .response?.data?.error
-                : "Failed to accept shipment";
+              : "Failed to accept shipment";
             toast.error(message);
           })
           .finally(() => {
             setAcceptingSegmentId(null);
+            setAcceptDialogSegmentId(null);
           });
       };
       return (

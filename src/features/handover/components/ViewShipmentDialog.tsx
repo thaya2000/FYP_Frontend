@@ -132,10 +132,10 @@ export function ViewShipmentDialog({
                 <div className="space-y-4">
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase text-muted-foreground mb-2 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-cyan-600" />
-                        From
-                      </p>
+                      <div className="text-xs font-semibold uppercase text-muted-foreground mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-600 inline-block" />
+                        <span>From</span>
+                      </div>
                       <div>
                         <p className="font-bold text-lg text-gray-900">
                           {start.name || "Origin"}
@@ -153,10 +153,10 @@ export function ViewShipmentDialog({
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase text-muted-foreground mb-2 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-cyan-600" />
-                        To
-                      </p>
+                      <div className="text-xs font-semibold uppercase text-muted-foreground mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-600 inline-block" />
+                        <span>To</span>
+                      </div>
                       <div>
                         <p className="font-bold text-lg text-gray-900">
                           {end.name || "Destination"}

@@ -684,7 +684,7 @@ export const HandoverProvider = ({
     },
     onSuccess: () => {
       toast.success("Shipment accepted");
-      queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
+      queryClient.invalidateQueries({ queryKey: ["incomingShipments", uuid] });
       SUPPLIER_STATUS_ORDER.forEach((status) =>
         queryClient.invalidateQueries({
           queryKey: ["supplierSegments", uuid, status],

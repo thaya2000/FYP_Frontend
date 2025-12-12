@@ -31,7 +31,8 @@ export function ViewShipmentButton({
   const { data: segmentData, isLoading: loadingSegment } = useQuery({
     queryKey: ["shipmentSegment", segmentId],
     queryFn: () => shipmentService.getSegmentById(segmentId!),
-    enabled: open && Boolean(segmentId) && !resolvedShipmentId,
+    enabled: open && Boolean(segmentId),
+    refetchOnMount: "always",
   });
 
   // Capture shipment ID when segment data arrives
