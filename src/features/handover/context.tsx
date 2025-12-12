@@ -75,6 +75,8 @@ type SupplierContextValue = {
   loadingByStatus: Record<SupplierShipmentStatus, boolean>;
   shipmentsByStatus: Record<SupplierShipmentStatus, SupplierShipmentRecord[]>;
   statusOrder: SupplierShipmentStatus[];
+  activeStatus: SupplierShipmentStatus;
+  setActiveStatus: (status: SupplierShipmentStatus) => void;
   areaQuery: string;
   setAreaQuery: (value: string) => void;
   filterShipmentsByArea: (
@@ -416,23 +418,39 @@ export const HandoverProvider = ({
   >({
     queryKey: ["incomingShipments", uuid],
     queryFn: () => shipmentService.getIncoming(uuid ?? ""),
-    enabled: Boolean(uuid) && (role === "SUPPLIER" || role === "WAREHOUSE"),
+    // Disabled per requirement: avoid calling /shipment-segments/pending
+    enabled: false,
     select: (segments) => segments.map(segmentToSupplierShipment),
   });
 
+  const [activeSupplierStatus, setActiveSupplierStatus] =
+    useState<SupplierShipmentStatus>(SUPPLIER_STATUS_ORDER[0]);
+
   const supplierSegmentsQueries = useQueries({
-    queries: SUPPLIER_STATUS_ORDER.map((status) => ({
-      queryKey: ["supplierSegments", uuid, status] as const,
-      queryFn: () => shipmentService.getSupplierSegments({ status }),
-      enabled: Boolean(uuid) && (role === "SUPPLIER" || role === "WAREHOUSE"),
-      select: (segments: ShipmentSegmentResponse[]) =>
-        segments.map(segmentToSupplierShipment),
-    })) satisfies UseQueryOptions<
-      ShipmentSegmentResponse[],
-      Error,
-      SupplierShipmentRecord[]
-    >[],
-  });
+    queries: [
+      {
+        queryKey: ["supplierSegments", uuid, activeSupplierStatus] as const,
+        queryFn: ({ pageParam }: { pageParam?: string | null }) =>
+          shipmentService.getSupplierSegments({
+            status: activeSupplierStatus,
+            cursor: pageParam ?? undefined,
+            limit: 20,
+          }),
+        getNextPageParam: (lastPage: any) =>
+          lastPage?.cursor ?? null,
+        enabled:
+          Boolean(uuid) &&
+          (role === "SUPPLIER" || role === "WAREHOUSE"),
+        select: (payload: any) => ({
+          segments: Array.isArray(payload?.segments)
+            ? payload.segments.map(segmentToSupplierShipment)
+            : [],
+          cursor: payload?.cursor ?? null,
+          hasMore: Boolean(payload?.hasMore),
+        }),
+      },
+    ],
+  } as any);
 
   const {
     data,
@@ -601,7 +619,7 @@ export const HandoverProvider = ({
       }
 
       if (!destUUID.trim()) {
-        toast.error("Enter destination party UUID");
+        toast.error("Select a destination party from the dropdown");
         return;
       }
 
@@ -666,7 +684,7 @@ export const HandoverProvider = ({
     },
     onSuccess: () => {
       toast.success("Shipment accepted");
-      queryClient.invalidateQueries({ queryKey: ["incomingShipments"] });
+      queryClient.invalidateQueries({ queryKey: ["incomingShipments", uuid] });
       SUPPLIER_STATUS_ORDER.forEach((status) =>
         queryClient.invalidateQueries({
           queryKey: ["supplierSegments", uuid, status],
@@ -780,24 +798,23 @@ export const HandoverProvider = ({
     }
   }, [handoverForm, handoverTarget, queryClient, resetHandoverForm, uuid]);
 
+  const activeQuery = supplierSegmentsQueries[0];
+
   const shipmentsByStatus = useMemo(() => {
     const buckets = createStatusBuckets();
-    SUPPLIER_STATUS_ORDER.forEach((status, index) => {
-      const query = supplierSegmentsQueries[index];
-      buckets[status] = query?.data ?? [];
-    });
+    const segments = activeQuery?.data?.segments ?? [];
+    buckets[activeSupplierStatus] = segments;
     return buckets;
-  }, [supplierSegmentsQueries]);
+  }, [activeQuery?.data, activeSupplierStatus]);
 
   const loadingByStatus = useMemo(() => {
-    return SUPPLIER_STATUS_ORDER.reduce((acc, status, index) => {
-      const query = supplierSegmentsQueries[index];
-      acc[status] = Boolean(
-        query?.isLoading || query?.isFetching || query?.isPending
-      );
+    return SUPPLIER_STATUS_ORDER.reduce((acc, status) => {
+      acc[status] = status === activeSupplierStatus
+        ? Boolean(activeQuery?.isLoading || activeQuery?.isFetching || activeQuery?.isPending)
+        : false;
       return acc;
     }, {} as Record<SupplierShipmentStatus, boolean>);
-  }, [supplierSegmentsQueries]);
+  }, [activeQuery, activeSupplierStatus]);
 
   const filterShipmentsByArea = useCallback(
     (shipments: SupplierShipmentRecord[]) => {
@@ -842,6 +859,8 @@ export const HandoverProvider = ({
     loadingByStatus,
     shipmentsByStatus,
     statusOrder: SUPPLIER_STATUS_ORDER,
+    activeStatus: activeSupplierStatus,
+    setActiveStatus: setActiveSupplierStatus,
     areaQuery,
     setAreaQuery,
     filterShipmentsByArea,

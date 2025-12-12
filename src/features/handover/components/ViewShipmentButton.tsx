@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Eye, Loader2 } from "lucide-react";
@@ -16,23 +16,44 @@ export function ViewShipmentButton({
   segmentId,
 }: ViewShipmentButtonProps) {
   const [open, setOpen] = useState(false);
+  const [resolvedShipmentId, setResolvedShipmentId] = useState<string | undefined>(
+    shipmentId
+  );
+
+  // Keep resolved ID in sync if prop changes
+  useEffect(() => {
+    if (shipmentId && shipmentId !== resolvedShipmentId) {
+      setResolvedShipmentId(shipmentId);
+    }
+  }, [shipmentId, resolvedShipmentId]);
 
   // For segments, we need to fetch the segment first to get the shipment ID
   const { data: segmentData, isLoading: loadingSegment } = useQuery({
     queryKey: ["shipmentSegment", segmentId],
     queryFn: () => shipmentService.getSegmentById(segmentId!),
-    enabled: open && Boolean(segmentId) && !shipmentId,
+    enabled: open && Boolean(segmentId),
+    refetchOnMount: "always",
   });
 
-  // Determine the actual shipment ID
-  const actualShipmentId = shipmentId || segmentData?.shipmentId;
+  // Capture shipment ID when segment data arrives
+  useEffect(() => {
+    if (resolvedShipmentId) return;
+    const derived =
+      segmentData?.shipmentId ||
+      segmentData?.shipment_id ||
+      segmentData?.shipment?.id;
+    if (derived) {
+      setResolvedShipmentId(String(derived));
+    }
+  }, [segmentData, resolvedShipmentId]);
 
   // Fetch full shipment details
   const { data: shipmentData, isLoading: loadingShipment } =
     useQuery<ShipmentDetailResponse>({
-      queryKey: ["shipmentDetail", actualShipmentId],
-      queryFn: () => shipmentService.getById(actualShipmentId!),
-      enabled: open && Boolean(actualShipmentId),
+      queryKey: ["shipmentDetail", resolvedShipmentId],
+      queryFn: () => shipmentService.getById(resolvedShipmentId!),
+      // Suppliers viewing a segment don't need full shipment details
+      enabled: open && Boolean(resolvedShipmentId) && !segmentId,
     });
 
   const isLoading = loadingSegment || loadingShipment;
@@ -50,7 +71,7 @@ export function ViewShipmentButton({
         size="sm"
         variant="outline"
         onClick={() => setOpen(true)}
-        disabled={isLoading}
+        disabled={!shipmentId && !segmentId}
       >
         {isLoading ? (
           <>
@@ -68,7 +89,9 @@ export function ViewShipmentButton({
       <ViewShipmentDialog
         open={open}
         onOpenChange={setOpen}
+        loading={isLoading}
         shipment={shipmentData || null}
+        segment={segmentData || null}
       />
     </>
   );

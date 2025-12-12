@@ -57,16 +57,21 @@ export const shipmentService = {
   async getSupplierSegments(params?: {
     status?: string;
     ownerUUID?: string;
+    cursor?: string;
+    limit?: number;
   }): Promise<any[]> {
     const res = await api.get(`/api/shipment-segments/supplier`, { params });
     const payload = res.data;
-    if (Array.isArray(payload)) {
+    if (payload && Array.isArray(payload.segments)) {
       return payload;
     }
-    if (payload && Array.isArray(payload.data)) {
-      return payload.data;
+    if (Array.isArray(payload)) {
+      return { segments: payload, cursor: null, hasMore: false };
     }
-    return [];
+    if (payload && Array.isArray(payload.data)) {
+      return { segments: payload.data, cursor: payload.cursor ?? null, hasMore: false };
+    }
+    return { segments: [], cursor: null, hasMore: false };
   },
 
   async getByManufacturer(
